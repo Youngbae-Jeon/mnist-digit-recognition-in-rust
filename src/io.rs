@@ -53,7 +53,7 @@ pub fn import_images() -> TrainData {
 				tst_img, tst_lbl } = MnistBuilder::new()
 		.label_format_digit()
 		.training_set_length(trn_size)
-		.validation_set_length(10_000)
+		//.validation_set_length(10_000)
 		.test_set_length(10_000)
 		.base_path("data/")
 		.finalize();
@@ -75,8 +75,8 @@ pub fn import_images() -> TrainData {
 	}
 }
 
+// Designed to normalize Pixels without color-data so 255 is hardcoded
 fn normalize(x: &u8) -> f64 {
-	// Designed to normalize Pixels without color-data so 255 is hardcoded
 	*x as f64 / 255.0
 }
 
@@ -87,7 +87,6 @@ fn pack_images_vec(input_vector: Vec<u8>, rows: u8, cols: u8) -> Vec<Vec<f64>> {
 		.collect();
 	
 	let image_len = (rows as i32 * cols as i32) as usize;
-	//let vec_width = input.len() / image_len;
 	let target_vec: Vec<Vec<f64>> = input.chunks(image_len)
 		.map(|x| x.to_vec())    
 		.collect();
@@ -113,10 +112,9 @@ fn pack_vector_data(data: &Vec<Vec<f64>>, label: &Vec<u8>) -> Vec<(Vec<f64>, i32
 	result
 }
 
+// Creates a 1d vector with size 10 (0..9) which contains a 1 a the 
+// index-location of the input @num
 fn vectorise_num(num: &u8) -> Vec<f64> {
-	// Creates a 1d vector with size 10 (0..9) which contains a 1 a the 
-	// index-location of the input @num
-
 	let mut out = vec![0.; 10];
 	out[*num as usize] = 1.;
 	out

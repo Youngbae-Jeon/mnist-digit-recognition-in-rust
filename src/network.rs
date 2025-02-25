@@ -2,12 +2,11 @@
 extern crate rand;
 
 use chrono::Local;
-use make_it_braille::BrailleImg;
-use rand::distributions::StandardNormal;
 use rand::prelude::*;
 use rand::seq::SliceRandom;
-use rand::thread_rng;
 use utils::math::sigmoid;
+
+use crate::utils::WrongAnswers;
 
 #[derive(Savefile)]
 pub struct Network {
@@ -33,12 +32,13 @@ impl Network {
 		// in numpy one just takes y and z standard normal distributions and puts them in an array
 		// Code partially from here https://docs.rs/rand/0.6.5/rand/distributions/struct.Normal.html
 
+		let mut rng = rand::rng();
 		let mut bs: Vec<Vec<f64>> = vec![];
 		for size in in_sizes[1..].iter() {
 			let mut res: Vec<f64> = vec![];
 
 			for _ in 0..*size {
-				res.push(SmallRng::from_entropy().sample(StandardNormal) as f64);
+				res.push(rng.random_range(-1.0..1.0));
 			}
 
 			bs.push(res);
@@ -56,13 +56,14 @@ impl Network {
 		let locator = in_sizes.len() - 1;
 		let size_iter = in_sizes[1..].iter().zip(in_sizes[..locator].iter());
 
+		let mut rng = rand::rng();
 		for (x, y) in size_iter {
 			let mut overholder = vec![];
 
 			for _ in 0..*x {
 				let mut placeholder = vec![];
 				for _ in 0..*y {
-					placeholder.push(SmallRng::from_entropy().sample(StandardNormal) as f64);
+					placeholder.push(rng.random_range(-1.0..1.0));
 				}
 
 				overholder.push(placeholder);
@@ -77,24 +78,25 @@ impl Network {
 		&mut self,
 		training_data: &Vec<Vec<Vec<f64>>>,
 		epochs: usize,
-		success_percentage: u32,
+		success_percentage: f64,
 		mini_batch_size: usize,
 		eta: f64,
 		test_data: &Vec<(Vec<f64>, i32)>,
 	) {
 		// Print evaluation result
-		let correct_images = self.evaluate(test_data);
+		let (correct_images, _) = self.evaluate(test_data);
 		println!("Before Epoch: {} / {}", correct_images, test_data.len());
 
 		let mut td = training_data.clone();
 
 		let mut idx = 0;
-		let mut accuracy: u32 = 0;
-		while idx <= epochs || accuracy == success_percentage {
+		let mut accuracy: f64 = 0.0;
+		let mut rng = rand::rng();
+		while idx <= epochs && accuracy < success_percentage {
 			let t = Local::now();
 
 			// Shuffle and slice training data by mini_batch_size
-			td.shuffle(&mut thread_rng());
+			td.shuffle(&mut rng);
 
 			//// Apply backpropagation on mini_batches
 			for mb in td.chunks(mini_batch_size) {
@@ -102,44 +104,39 @@ impl Network {
 			}
 
 			// Print evaluation result
-			let correct_images = self.evaluate(test_data);
-			accuracy = (correct_images / 100) as u32;
+			let (correct_images, wrong_answers) = self.evaluate(test_data);
+			accuracy = correct_images as f64 / test_data.len() as f64;
 
-			println!("Epoch {}: {} / {} ({}s delayed)", idx, correct_images, test_data.len(), (Local::now() - t).num_seconds());
+			//wrong_answers.dump();
+			println!("Epoch {}: {} / {} ({:.1}%), ({}s delayed)", idx, correct_images, test_data.len(), accuracy * 100.0, (Local::now() - t).num_seconds());
 
 			//println!("weights are: {:?}", self.weights[0][0]);
 			idx = idx + 1;
 		}
 	}
 
+	// Takes and modifies an input image-vector and returns results
+	// based on previously defined weights.
 	pub fn feedforward(&self, a: &Vec<f64>) -> Vec<f64> {
-		// Takes and modifies an input image-vector and returns results
-		// based on previously defined weights.
-		let mut updated_a = a.clone();
-
-		for (bias, weight) in self.biases.iter().zip(self.weights.iter()) {
-			updated_a = sigmoid_vec(&add_vec(&dot(&updated_a, weight), bias));
-		}
-		updated_a
+		let feedforward_for_layer = |a: Vec<f64>, (b, w): (&Vec<f64>, &Vec<Vec<f64>>)| {
+			sigmoid_vec(&add_vec(&dot(&a, w), b))
+		};
+		self.biases.iter().zip(self.weights.iter())
+			.fold(a.clone(), feedforward_for_layer)
 	}
 
 	fn backpropagate(&self, x: &Vec<f64>, y: &Vec<f64>) -> (Vec<Vec<f64>>, Vec<Vec<Vec<f64>>>) {
 		// Calculates the gradient for the cost-function
 
 		// Initialise gradient vectors:
-		let mut nabla_b = vec![];
-		for bias in &self.biases {
-			nabla_b.push(vec![0.; bias.len()])
-		}
-
-		let mut nabla_w = vec![];
-		for weight in &self.weights {
-			let mut wholder = vec![];
-			for w in weight {
-				wholder.push(vec![0.; w.len()])
-			}
-			nabla_w.push(wholder)
-		}
+		let mut nabla_b = self.biases.iter()
+			.map(|bias| vec![0.; bias.len()])
+			.collect::<Vec<Vec<f64>>>();
+		let mut nabla_w = self.weights.iter()
+			.map(|weight| weight.iter()
+				.map(|w| vec![0.; w.len()])
+				.collect())
+			.collect::<Vec<Vec<Vec<f64>>>>();
 
 		// Feedforward part (according to template)
 		// I use clones mostly to not get confused about ownership at this stage
@@ -185,7 +182,8 @@ impl Network {
 			let z = &zs[locator];
 			let sp = sigmoid_prime(&z);
 
-			locator = (self.weights.len() as f64 - (i + 1) as f64) as usize;
+			locator = self.weights.len() - i as usize;
+			//locator = (self.weights.len() as f64 - (i + 1) as f64) as usize;
 			//println!("THESE ARE WEIGHTS: \n {:?}", self.weights);
 			let weight_fodder = transpose(self.weights[locator].clone());
 			let temp_delta = dot(&delta, &weight_fodder);
@@ -256,28 +254,29 @@ impl Network {
 		}
 
 		let m = mini_batch.len();
-		let mut ph_b: Vec<Vec<f64>> = Vec::new();
-		let mut ph_w: Vec<Vec<Vec<f64>>> = Vec::new();
+		//println!("biases: {:?}", self.biases);
+		//println!("nabla_b: {:?}", nabla_b);
+		let ph_b: Vec<Vec<f64>> = self.biases.iter().zip(&nabla_b)
+			.map(|(b, nb)| {
+				b.iter().zip(nb)
+					.map(|(bs, nbs)| bs - nbs * eta / m as f64)
+					.collect()
+			})
+			.collect();
 
-		for (b, nb) in self.biases.iter().zip(&nabla_b) {
-			let mut bnb = Vec::new();
-			for (bs, nbs) in b.iter().zip(nb) {
-				bnb.push(nbs * eta / m as f64 - bs)
-			}
-			ph_b.push(bnb)
-		}
-
-		for (w, nw) in self.weights.iter().zip(&nabla_w) {
-			let mut new_w: Vec<Vec<f64>> = Vec::new();
-			for (min_w, min_nw) in w.iter().zip(nw) {
-				let mut wnws = Vec::new();
-				for (ws, nws) in min_w.iter().zip(min_nw) {
-					wnws.push(nws * eta / m as f64 - ws)
-				}
-				new_w.push(wnws);
-			}
-			ph_w.push(new_w)
-		}
+		//println!("weights: {:?}", self.weights[0][0][200]);
+		//println!("nabla_w: {:?}", nabla_w[0][0][200]);
+		let ph_w: Vec<Vec<Vec<f64>>> = self.weights.iter().zip(&nabla_w)
+			.map(|(w, nw)| {
+				w.iter().zip(nw)
+					.map(|(min_w, min_nw)| {
+						min_w.iter().zip(min_nw)
+							.map(|(ws, nws)| ws - nws * eta / m as f64)
+							.collect()
+					})
+					.collect()
+			})
+			.collect();
 
 		self.biases = ph_b;
 		self.weights = ph_w;
@@ -291,37 +290,26 @@ impl Network {
 
 		let mut prod = vec![];
 		for i in 0..output_activations.len() {
-			prod.push(&output_activations[i] - &y[i]);
+			prod.push(output_activations[i] - y[i]);
 		}
 		prod
 	}
 
-	fn evaluate(&self, test_data: &Vec<(Vec<f64>, i32)>) -> i32 {
+	fn evaluate<'a>(&self, test_data: &'a Vec<(Vec<f64>, i32)>) -> (i32, WrongAnswers<'a>) {
 		// Returns the sum of correctly assigned test inputs.
-		test_data.iter()
+		let mut wrongs = WrongAnswers::new();
+		let r = test_data.iter()
 			.map(|(x, y)| {
 				let r = argmax(&self.feedforward(x)) as i32;
 				if r == *y {
 					1
 				} else {
-					self.dump_evaluation(x, *y, r);
+					wrongs.push((x, *y, r));
 					0
 				}
 			})
-			.sum()
-	}
-
-	fn dump_evaluation(&self, image: &Vec<f64>, label: i32, guess: i32) {
-		let mut img = BrailleImg::new(28, 28);
-		// Used to dump data for debugging purposes
-		image.chunks(28).enumerate().for_each(|(y, rows)| {
-			rows.iter().enumerate().for_each(|(x, val)| {
-				img.set_dot(x as u32, y as u32, *val > 0.5)
-					.expect("Error setting dot");
-			});
-		});
-		println!("{}", img.as_str(false, true));
-		println!("Label: {:?} vs Guess: {:?}", label, guess);
+			.sum();
+		(r, wrongs)
 	}
 }
 

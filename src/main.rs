@@ -1,5 +1,7 @@
 mod network;
 mod io;
+mod neural;
+mod utils;
 extern crate savefile;
 use network::Network;
 use savefile::prelude::*;
@@ -46,7 +48,7 @@ fn test_input_images(net: &Network) {
 fn train_network(net: &mut network::Network, data: &io::TrainData) {
 	let mbs: usize = 10;
 	let learning_rate: f64 = 0.5;
-	let success: u32 = 80;
+	let success: f64 = 0.9;
 
 	net.sgd(
 		&data.training_data,
