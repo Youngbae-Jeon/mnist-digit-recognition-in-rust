@@ -8,11 +8,7 @@ edition = "2018"
 
 [dependencies]
 image = "^0.23.14"
-ndarray = "^0.15.3"
 mnist = "^0.4.1"
-mindtree_utils = "^0.4"
-savefile = "^0.8"
-savefile-derive = "^0.8"
 chrono = "0.4.39"
 make_it_braille = "0.6.0"
 rand = "0.9.0"

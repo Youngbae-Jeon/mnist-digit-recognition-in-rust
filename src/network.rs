@@ -4,11 +4,9 @@ extern crate rand;
 use chrono::Local;
 use rand::prelude::*;
 use rand::seq::SliceRandom;
-use utils::math::sigmoid;
 
-use crate::utils::WrongAnswers;
+use crate::utils::{sigmoid, WrongAnswers};
 
-#[derive(Savefile)]
 pub struct Network {
 	pub sizes: Vec<u32>,
 	pub num_layers: u32,
@@ -161,6 +159,7 @@ impl Network {
 			&self.cost_derivative(&activations[activations.len() - 1], y),
 			&sigmoid_prime(&zs[zs.len() - 1]),
 		);
+		//println!("delta.1: {}", delta.len());
 		let mut locator = nabla_b.len() - 1;
 		nabla_b[locator] = delta.clone();
 
@@ -170,33 +169,35 @@ impl Network {
 		locator = nabla_w.len() - 1;
 		// b input of Activations was transposed in python, but doesn't need to be
 		// with current data structure
+		//println!("delta.size: {} activations.size: {}", delta.len(), activations[activations.len() - 2].len());
 		nabla_w[locator] = dot_2d_from_1d(&delta, &activations[activations.len() - 2]);
+		//println!("nabla_w[{}]: {:?}", locator, measure_size(nabla_w[locator].as_ref()));
 		//println!("Das ist nabla_w: {:?}", nabla_w);
 
-		for i in 2..self.num_layers {
-			// i is used to measure the distance from the end
-			// of the zs-vector
-
-			locator = zs.len() - i as usize;
-
-			let z = &zs[locator];
+		assert_eq!(activations.len(), self.num_layers as usize);
+		assert_eq!(zs.len(), self.num_layers as usize - 1);
+		assert_eq!(self.weights.len(), zs.len());
+		assert_eq!(nabla_b.len(), zs.len());
+		assert_eq!(nabla_w.len(), zs.len());
+		for i in (0..(zs.len() - 1)).rev() {
+			let z = &zs[i];
 			let sp = sigmoid_prime(&z);
 
-			locator = self.weights.len() - i as usize;
-			//locator = (self.weights.len() as f64 - (i + 1) as f64) as usize;
-			//println!("THESE ARE WEIGHTS: \n {:?}", self.weights);
-			let weight_fodder = transpose(self.weights[locator].clone());
-			let temp_delta = dot(&delta, &weight_fodder);
+			//println!("delta: {}", delta.len());
+			//println!("self.weights[{}]: {:?}", i, measure_size(&self.weights[i]));
+
+			let transposed_weights = transpose(self.weights[i].clone());
+			//println!("transposed_wights: {:?}", measure_size(&transposed_weights));
+
+			let temp_delta = dot(&delta, &transposed_weights);
+			//println!("temp_delta: {}", temp_delta.len());
 
 			delta = dot_1d(&temp_delta, &sp);
+			//println!("delta: {}", delta.len());
 
 			// Updating of gradients
-			locator = nabla_b.len() - i as usize;
-			nabla_b[locator] = delta.clone();
-
-			locator = nabla_w.len() - i as usize;
-			let activations_loc = activations.len() - (i + 1) as usize;
-			nabla_w[locator] = dot_2d_from_1d(&delta, &activations[activations_loc]);
+			nabla_b[i] = delta.clone();
+			nabla_w[i] = dot_2d_from_1d(&delta, &activations[i]);
 		}
 
 		(nabla_b, nabla_w)
@@ -318,6 +319,7 @@ impl Network {
 fn dot(a: &Vec<f64>, matrix: &Vec<Vec<f64>>) -> Vec<f64> {
 	matrix.iter()
 		.map(|row| {
+			//assert_eq!(a.len(), row.len());
 			row.iter().zip(a.iter())
 				.map(|(mi, ai)| mi * ai)
 				.sum()
@@ -390,4 +392,8 @@ fn sigmoid_prime(a: &[f64]) -> Vec<f64> {
 			v * (1. - v)
 		})
 		.collect()
+}
+
+fn measure_size(a: &Vec<Vec<f64>>) -> (usize, usize) {
+	(a.len(), a[0].len())
 }

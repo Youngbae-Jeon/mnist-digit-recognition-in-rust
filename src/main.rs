@@ -2,37 +2,23 @@ mod network;
 mod io;
 mod neural;
 mod utils;
-extern crate savefile;
 use network::Network;
-use savefile::prelude::*;
-#[macro_use]
-extern crate savefile_derive;
 
 fn main() {
+	run2()
+}
+
+fn run1() {
 	let data = io::import_images();
 
 	let layers = vec![784, 16, 10];
 
-	let mut net: network::Network;
-	let mut trained = false;
-
-	match load_network() {
-		Err(_) => net = network::Network::new(layers.clone()),
-		Ok(saved_net) => {
-			trained = true; 
-			net = saved_net
-		}
-	}
-
-	if !trained {
-		train_network(&mut net, &data)
-	}
+	let mut net = network::Network::new(layers.clone());
+	train_network(&mut net, &data);
 
 	println!("Initialised network with layer structure {:?}", layers);
 
-	save_network(&net);
-
-	test_input_images(&net)
+	test_input_images(&net);
 }
 
 fn test_input_images(net: &Network) {
@@ -62,11 +48,28 @@ fn train_network(net: &mut network::Network, data: &io::TrainData) {
 	println!("Training successful!")
 }
 
-fn save_network(n: &network::Network) {
-	save_file("data/network.bin", 0.1 as u32, n).unwrap();
-	println!("Network saved. ");
+fn run2() {
+	let data = io::import_images();
+
+	let layers = vec![784, 16, 10];
+
+	let mut net = neural::Network::new(layers.clone());
+	train_neural(&mut net, &data)
 }
 
-fn load_network() -> Result<network::Network, SavefileError> {
-	load_file("data/network.bin", 0.1 as u32)
+fn train_neural(net: &mut neural::Network, data: &io::TrainData) {
+	let mbs: usize = 10;
+	let learning_rate: f64 = 0.5;
+	let success: f64 = 0.9;
+
+	net.sgd(
+		&data.training_data,
+		200, 
+		success,
+		mbs, 
+		learning_rate, 
+		&data.test_data
+	);
+
+	println!("Training successful!")
 }
