@@ -183,17 +183,11 @@ impl Network {
 			let z = &zs[i];
 			let sp = sigmoid_prime(&z);
 
-			//println!("delta: {}", delta.len());
-			//println!("self.weights[{}]: {:?}", i, measure_size(&self.weights[i]));
-
-			let transposed_weights = transpose(self.weights[i].clone());
-			//println!("transposed_wights: {:?}", measure_size(&transposed_weights));
-
-			let temp_delta = dot(&delta, &transposed_weights);
-			//println!("temp_delta: {}", temp_delta.len());
-
-			delta = dot_1d(&temp_delta, &sp);
-			//println!("delta: {}", delta.len());
+			let weights_to_next_layer = &self.weights[i + 1];
+			//println!("delta: {}, transpose(weights_to_next_layer): {}, sp: {}", delta.len(), transpose(weights_to_next_layer).len(), sp.len());
+			//println!("dot(delta, transpose(weights_to_next_layer)): {}", dot(&delta, &transpose(weights_to_next_layer)).len());
+			delta = dot_1d(&dot(&delta, &transpose(weights_to_next_layer)), &sp);
+			//println!("delta.2: {}", delta.len());
 
 			// Updating of gradients
 			nabla_b[i] = delta.clone();
@@ -319,7 +313,7 @@ impl Network {
 fn dot(a: &Vec<f64>, matrix: &Vec<Vec<f64>>) -> Vec<f64> {
 	matrix.iter()
 		.map(|row| {
-			//assert_eq!(a.len(), row.len());
+			assert_eq!(a.len(), row.len());
 			row.iter().zip(a.iter())
 				.map(|(mi, ai)| mi * ai)
 				.sum()
@@ -364,7 +358,7 @@ pub fn argmax(a: &[f64]) -> usize {
 
 // Following function was taken from here:
 // https://stackoverflow.com/questions/64498617/how-to-transpose-a-vector-of-vectors-in-rust
-fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>>
+fn transpose<T>(v: &[Vec<T>]) -> Vec<Vec<T>>
 where
 	T: Clone,
 {

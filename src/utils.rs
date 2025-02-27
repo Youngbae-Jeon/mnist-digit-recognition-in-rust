@@ -1,4 +1,4 @@
-use std::ops::{AddAssign, DivAssign, Index, IndexMut, Mul, MulAssign, SubAssign};
+use std::{fmt::{self, Display, Formatter}, iter::FromIterator, ops::{AddAssign, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign}};
 
 use make_it_braille::BrailleImg;
 
@@ -10,6 +10,7 @@ impl Vector1D {
 	}
 
 	pub fn dot(&self, other: &Vector1D) -> f64 {
+		assert_eq!(self.len(), other.len());
 		self.iter().zip(other.iter())
 			.map(|(a, b)| a * b)
 			.sum()
@@ -41,10 +42,6 @@ impl Vector1D {
 				}
 			})
 	}
-
-	pub fn sub(&self, rhs: &Self) -> Self {
-		Self(self.iter().zip(rhs.iter()).map(|(a, b)| a - b).collect())
-	}
 }
 impl From<Vec<f64>> for Vector1D {
 	fn from(vec: Vec<f64>) -> Self {
@@ -75,6 +72,15 @@ impl SubAssign<&Vector1D> for Vector1D {
 		self.iter_mut().zip(rhs.iter()).for_each(|(a, b)| *a -= b);
 	}
 }
+impl Sub<&Vector1D> for Vector1D {
+	type Output = Self;
+
+	fn sub(mut self, rhs: &Vector1D) -> Self::Output {
+		assert_eq!(self.len(), rhs.len());
+		self.sub_assign(rhs);
+		self
+	}
+}
 impl DivAssign<f64> for Vector1D {
 	fn div_assign(&mut self, rhs: f64) {
 		self.iter_mut().for_each(|x| *x /= rhs);
@@ -89,8 +95,32 @@ impl Mul<f64> for Vector1D {
 	type Output = Self;
 
 	fn mul(mut self, rhs: f64) -> Self::Output {
-		self.iter_mut().for_each(|x| *x *= rhs);
+		self.mul_assign(rhs);
 		self
+	}
+}
+impl MulAssign<&Vector1D> for Vector1D {
+	fn mul_assign(&mut self, rhs: &Vector1D) {
+		assert_eq!(self.len(), rhs.len());
+		self.iter_mut().zip(rhs.iter()).for_each(|(a, b)| *a *= b);
+	}
+}
+impl Mul<&Vector1D> for Vector1D {
+	type Output = Vector1D;
+
+	fn mul(mut self, rhs: &Vector1D) -> Self::Output {
+		self.mul_assign(rhs);
+		self
+	}
+}
+impl Display for Vector1D {
+	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+		write!(f, "Vector1D(len={})", self.len())
+	}
+}
+impl FromIterator<f64> for Vector1D {
+	fn from_iter<I: IntoIterator<Item = f64>>(iter: I) -> Self {
+		Self(Vec::from_iter(iter))
 	}
 }
 
@@ -141,10 +171,26 @@ fn draw_image(img: &mut BrailleImg, pixels: &Vec<f64>, x: u32, y: u32) {
 	});
 }
 
+pub fn sigmoid(o: f64) -> f64 {
+	1.0 / (1.0 + (-o).exp())
+}
+
 pub fn sigmoid_prime(o: f64) -> f64 {
 	sigmoid(o) * (1.0 - sigmoid(o))
 }
 
-pub fn sigmoid(o: f64) -> f64 {
-	1.0 / (1.0 + (-o).exp())
+#[derive(Clone, Copy)]
+pub struct ActivationFunction {
+	pub f: fn(z: f64) -> f64,
+	pub prime: fn(z: f64) -> f64,
+}
+impl ActivationFunction {
+	pub const SIGMOID: ActivationFunction = ActivationFunction {
+		f: sigmoid,
+		prime: sigmoid_prime,
+	};
+	pub const NOOP: ActivationFunction = ActivationFunction {
+		f: |z| z,
+		prime: |_| 1.0,
+	};
 }

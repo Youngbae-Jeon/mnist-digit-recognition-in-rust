@@ -45,7 +45,7 @@ pub struct TrainData {
 
 pub fn import_images() -> TrainData {
 	// Code was partly taken from this address (https://docs.rs/mnist/0.4.1/mnist/)
-	let (trn_size, rows, cols) = (10_000, 28, 28);
+	let (trn_size, rows, cols) = (50_000, 28, 28);
 
 	// Deconstruct the returned Mnist struct.
 	let Mnist { trn_img, trn_lbl, 

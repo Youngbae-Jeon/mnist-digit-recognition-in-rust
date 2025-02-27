@@ -1,21 +1,9 @@
 use std::ops::{AddAssign, Div, DivAssign, Mul, MulAssign, SubAssign};
 
 use chrono::Local;
-use rand::{rngs::ThreadRng, seq::SliceRandom, Rng};
+use rand::{seq::SliceRandom, Rng};
 
-use crate::utils::{sigmoid, sigmoid_prime, Vector1D, WrongAnswers};
-
-// (activation, z)
-#[derive(Debug)]
-struct FeedForward<T>(T, T);
-impl<T> FeedForward<T> {
-	fn activation(&self) -> &T {
-		&self.0
-	}
-	fn z(&self) -> &T {
-		&self.1
-	}
-}
+use crate::utils::{ActivationFunction, Vector1D, WrongAnswers};
 
 #[derive(Debug)]
 struct Neuron {
@@ -23,37 +11,27 @@ struct Neuron {
 	bias: f64,
 }
 impl Neuron {
-	fn new(input_layer_size: usize, rng: &mut ThreadRng) -> Self {
-		let weights = (0..input_layer_size).map(|_| rng.random_range(-1.0..1.0)).collect();
-		let bias = rng.random_range(-1.0..1.0);
-		(weights, bias).into()
-	}
-	fn zero(input_layer_size: usize) -> Self {
+	fn new(weights_len: usize) -> Self {
+		let mut rng = rand::rng();
 		Self {
-			weights: Vector1D::zero(input_layer_size),
+			weights: (0..weights_len).map(|_| rng.random_range(-1.0..1.0)).collect(),
+			bias: rng.random_range(-1.0..1.0),
+		}
+	}
+	fn zero(weights_len: usize) -> Self {
+		Self {
+			weights: Vector1D::zero(weights_len),
 			bias: 0.0,
 		}
 	}
-	fn feedforward(&self, inputs: &Vector1D) -> FeedForward<f64> {
-		let z = inputs.dot(&self.weights) + self.bias;
-		FeedForward(sigmoid(z), z)
+	fn feedforward(&self, inputs: &Vector1D) -> f64 {
+		inputs.dot(&self.weights) + self.bias
 	}
-	fn backpropagate(&self, delta: f64, a: f64, inputs: &Vector1D) -> DeltaNeuron {
-		let sp = sigmoid_prime(a);
-		let delta = delta * sp;
-		let delta_bias = delta;
-		let delta_weights = inputs.clone() * delta;
+	// returns gradients of weights and bias
+	fn backpropagate(&self, delta: f64, inputs: &Vector1D) -> DeltaNeuron {
 		DeltaNeuron {
-			weights: delta_weights,
-			bias: delta_bias,
-		}
-	}
-}
-impl From<(Vec<f64>, f64)> for Neuron {
-	fn from((weights, bias): (Vec<f64>, f64)) -> Self {
-		Self {
-			weights: weights.into(),
-			bias,
+			weights: inputs.clone() * delta,
+			bias: delta,
 		}
 	}
 }
@@ -92,46 +70,47 @@ impl DivAssign<f64> for Neuron {
 
 type DeltaNeuron = Neuron;
 
-#[derive(Debug)]
 struct Layer {
 	neurons: Vec<Neuron>,
+	af: ActivationFunction,
 }
 impl Layer {
-	fn new(input_layer_size: usize, layer_size: usize, rng: &mut ThreadRng) -> Self {
-		let neurons = (0..layer_size)
-			.map(|_| {
-				let weights = (0..input_layer_size).map(|_| rng.random_range(-1.0..1.0)).collect();
-				let bias = rng.random_range(-1.0..1.0);
-				(weights, bias).into()
-			})
-			.collect();
-		Self { neurons }
+	fn new(input_layer_size: usize, layer_size: usize, af: ActivationFunction) -> Self {
+		Self {
+			neurons: (0..layer_size)
+				.map(|_| Neuron::new(input_layer_size))
+				.collect(),
+			af,
+		}
 	}
-	fn zero(input_layer_size: usize, layer_size: usize) -> Self {
-		let neurons = (0..layer_size).map(|_| Neuron::zero(input_layer_size)).collect();
-		Self { neurons }
+	fn zero(input_layer_size: usize, layer_size: usize, af: ActivationFunction) -> Self {
+		Self {
+			neurons: (0..layer_size)
+				.map(|_| Neuron::zero(input_layer_size))
+				.collect(),
+			af,
+		}
 	}
-	fn feedforward(&self, inputs: &Vector1D) -> FeedForward<Vector1D> {
+	/// Returns a tuple of (activations, z)
+	fn feedforward(&self, inputs: &Vector1D) -> (Vector1D, Vector1D) {
 		assert_eq!(inputs.len(), self.input_layer_size());
-		let size = self.neurons.len();
-		let ffv = FeedForward(Vector1D::zero(size), Vector1D::zero(size));
-		self.neurons.iter()
-			.enumerate()
-			.fold(ffv, |mut ffv, (i, neuron)| {
-				let FeedForward(a, z) = neuron.feedforward(inputs);
-				ffv.0[i] = a;
-				ffv.1[i] = z;
-				ffv
+		let size = self.size();
+		let az = (Vector1D::zero(size), Vector1D::zero(size));
+		self.neurons.iter().enumerate()
+			.fold(az, |mut az, (i, neuron)| {
+				let z = neuron.feedforward(inputs);
+				az.0[i] = self.apply_activation(z);
+				az.1[i] = z;
+				az
 			})
 	}
-	fn backpropagate(&self, delta: &Vector1D, ff: &FeedForward<Vector1D>, inputs: &Vector1D) -> DeltaLayer {
+	fn backpropagate(&self, delta: &Vector1D, inputs: &Vector1D) -> DeltaLayer {
 		assert_eq!(self.size(), delta.len());
-		assert_eq!(self.size(), ff.activation().len());
 		let delta_neurons: Vec<Neuron> = self.neurons.iter()
-			.zip(delta.iter().zip(ff.activation().iter()))
-			.map(|(neuron, (&delta, &a))| neuron.backpropagate(delta, a, inputs))
+			.zip(delta.iter())
+			.map(|(neuron, &delta)| neuron.backpropagate(delta, inputs))
 			.collect();
-		Self { neurons: delta_neurons }
+		Self { neurons: delta_neurons, af: self.af }
 	}
 	fn input_layer_size(&self) -> usize {
 		self.neurons[0].weights.len()
@@ -139,8 +118,14 @@ impl Layer {
 	fn size(&self) -> usize {
 		self.neurons.len()
 	}
-	fn prev_layer_size(&self) -> usize {
-		self.neurons[0].weights.len()
+	fn apply_activation(&self, z: f64) -> f64 {
+		(self.af.f)(z)
+	}
+	fn activation_prime_of(&self, z: f64) -> f64 {
+		(self.af.prime)(z)
+	}
+	fn iter_nth_weights_of_neurons(&self, n: usize) -> impl Iterator<Item = f64> + '_ {
+		self.neurons.iter().map(move |neuron| neuron.weights[n])
 	}
 }
 impl AddAssign<&Self> for Layer {
@@ -187,15 +172,19 @@ impl Div<f64> for Layer {
 
 type DeltaLayer = Layer;
 
-#[derive(Debug)]
+/// f(epoch, accuracy) -> eta
+type EtaFunction = fn(usize, f64) -> f64;
+
 pub struct Network {
 	layers: Vec<Layer>,
 }
 impl Network {
 	pub fn new (sizes: Vec<u32>) -> Self {
-		let mut rng = rand::rng();
 		let layers = sizes.windows(2)
-			.map(|pair| Layer::new(pair[0] as usize, pair[1] as usize, &mut rng))
+			.map(|pair| {
+				let af = ActivationFunction::SIGMOID;
+				Layer::new(pair[0] as usize, pair[1] as usize, af)
+			})
 			.collect();
 		Self { layers }
 	}
@@ -206,132 +195,124 @@ impl Network {
 		epochs: usize,
 		success_percentage: f64,
 		mini_batch_size: usize,
-		eta: f64,
+		eta_fn: EtaFunction,
 		test_data: &Vec<(Vec<f64>, i32)>,
 	) {
 		// Print evaluation result
 		let (correct_images, _) = self.evaluate(test_data);
-		println!("Before Epoch: {} / {}", correct_images, test_data.len());
+		let mut accuracy = correct_images as f64 / test_data.len() as f64;
+		println!("Epoch[0] {:.1}% ({}/{})", accuracy * 100.0, correct_images, test_data.len());
 
 		let mut td = training_data.clone();
+		let mut rng = rand::rng();
 
 		let mut idx = 0;
-		let mut accuracy: f64 = 0.0;
-		let mut rng = rand::rng();
 		while idx <= epochs && accuracy < success_percentage {
 			let t = Local::now();
+			let eta = eta_fn(idx, accuracy);
 
-			// Shuffle and slice training data by mini_batch_size
+			// learn from shuffled training data
 			td.shuffle(&mut rng);
-
-			//// Apply backpropagation on mini_batches
-			for mb in td.chunks(mini_batch_size) {
-				self.update_mini_batch(mb, eta);
-			}
+			self.learn_from_test_data(&td, eta, mini_batch_size);
 
 			// Print evaluation result
-			let (correct_images, wrong_answers) = self.evaluate(test_data);
+			let (correct_images, _wrong_answers) = self.evaluate(test_data);
 			accuracy = correct_images as f64 / test_data.len() as f64;
 
-			//wrong_answers.dump();
-			println!("Epoch {}: {} / {} ({:.1}%), ({}s delayed)", idx, correct_images, test_data.len(), accuracy * 100.0, (Local::now() - t).num_seconds());
+			//_wrong_answers.dump();
+			println!("Epoch[{}] {:.1}% ({}/{}, eta={:.1}%, {}s delayed)", idx+1, accuracy * 100.0, correct_images, test_data.len(), eta * 100.0, (Local::now() - t).num_seconds());
 
 			idx = idx + 1;
 		}
 	}
 
+	fn learn_from_test_data(&mut self, test_data: &[Vec<Vec<f64>>], eta: f64, mini_batch_size: usize) {
+		let mini_batches = test_data.chunks(mini_batch_size);
+
+		//// Apply backpropagation on mini_batches
+		for mb in mini_batches {
+			self.update_mini_batch(mb, eta);
+		}
+	}
+
 	fn update_mini_batch(&mut self, mini_batch: &[Vec<Vec<f64>>], eta: f64) {
-		let mut sum_nabla: Vec<DeltaLayer> = self.layers.iter()
-			.map(|layer| DeltaLayer::zero(layer.input_layer_size(), layer.size()))
+		let mut gradients: Vec<DeltaLayer> = self.layers.iter()
+			.map(|layer| DeltaLayer::zero(layer.input_layer_size(), layer.size(), layer.af))
 			.collect();
 
-		//let n = &sum_nabla[0].neurons[0];
-		//println!("Initial SumNabla.neurons[0]: {{weights=[{},...], bias={}}}", n.weights[0], n.bias);
-
 		for mb in mini_batch {
-			// Compute gradients of cost function with backpropagation
 			assert_eq!(mb.len(), 2);
 
-			let mini_test_data: Vector1D = mb[0].clone().into();
-			let mini_test_label: Vector1D = mb[1].clone().into();
-			let nabla = self.backpropagate(&mini_test_data, &mini_test_label);
+			let mini_batch_data: Vector1D = mb[0].clone().into();
+			let mini_batch_label: Vector1D = mb[1].clone().into();
+			let mini_batch_gradients = self.backpropagate(&mini_batch_data, &mini_batch_label);
 
-			// Update gradients
-			sum_nabla.iter_mut().zip(nabla.iter())
+			gradients.iter_mut().zip(mini_batch_gradients.iter())
 				.for_each(|(sum, n)| *sum += n);
-
-			//let n = &nabla.last().unwrap().neurons[0];
-			//println!("Nabla[last].neurons[0]: {{weights=[{},...], bias={}}} -> SumNabla", n.weights[0], n.bias);
 		}
 
-		//let n = &sum_nabla.last().unwrap().neurons[0];
-		//println!("SumNabla.neurons[0]: {{weights=[{},...], bias={}}}", n.weights[0], n.bias);
-
+		// Update gradients
 		let m = mini_batch.len();
-		let adjustment = sum_nabla.into_iter()
-			.map(|n| n * eta / m as f64)
-			.collect::<Vec<DeltaLayer>>();
-
-		//let n = &adjustment.last().unwrap().neurons[0];
-		//println!("Adjustment.neurons[0]: {{weights=[{},...], bias={}}}", n.weights[0], n.bias);
-
-		self.layers.iter_mut().zip(&adjustment)
-			.for_each(|(layer, adj)| *layer -= adj);
-
-		//let n = &self.layers.last().unwrap().neurons[0];
-		//println!("Neurons[0]: {{weights=[{},...], bias={}}}", n.weights[0], n.bias);
+		self.layers.iter_mut().zip(gradients.into_iter())
+			.for_each(|(layer, sum_nabla_for_layer)| *layer -= &(sum_nabla_for_layer * (eta / m as f64)));
 	}
 
 	// Takes and modifies an input image-vector and returns results
 	// based on previously defined weights.
 	pub fn feedforward(&self, x: &Vector1D) -> Vector1D {
-		let feedforward_for_layer = |a: Vector1D, layer: &Layer| {
-			let ff = layer.feedforward(&a);
-			ff.activation().iter()
-				.map(|a| *a)
-				.collect::<Vec<f64>>()
-				.into()	
-		};
 		self.layers.iter()
-			.fold(x.clone(), feedforward_for_layer)
+			.fold(x.clone(), |a, layer| {
+				layer.feedforward(&a).0.iter()
+					.map(|a| *a)
+					.collect()
+			})
 	}
 
-	fn feedforward_snapshot(&self, x: &Vector1D) -> Vec<FeedForward<Vector1D>> {
-		let a: FeedForward<Vector1D> = FeedForward(x.clone(), x.clone());
+	fn feedforward_snapshot(&self, x: &Vector1D) -> Vec<(Vector1D, Vector1D)> {
+		let a = (x.clone(), x.clone());
 		self.layers.iter()
-			.fold(vec![], |mut acc, layer| {
-				let ff = acc.last().unwrap_or(&a);
-				let ff = layer.feedforward(ff.activation());
-				acc.push(ff);
-				acc
+			.fold(Vec::with_capacity(self.layers.len()), |mut azs, layer| {
+				let inputs = &azs.last().unwrap_or(&a).0;
+				let az = layer.feedforward(inputs);
+				azs.push(az);
+				azs
 			})
 	}
 
 	fn backpropagate(&self, x: &Vector1D, y: &Vector1D) -> Vec<DeltaLayer> {
-		// Feedforward part (according to template)
-		let ffs = self.feedforward_snapshot(x);
-		//let ffs_len: Vec<usize> = ffs.as_slice()[1..].iter().map(|ff| ff.activation().len()).collect();
-		//println!("Feedforward snapshot: {:?}", ffs_len);
+		let azs = self.feedforward_snapshot(x);
 
-		//let layers_len: Vec<usize> = self.layers.iter().map(|layer| layer.size()).collect();
-		//println!("Layers: {:?}", layers_len);
+		let mut delta = {
+			let (last_a, _) = azs.last().unwrap();
+			cost_derivative(last_a, y)
+		};
 
-		// Backward pass
-		// Compute error/delta vector and backpropagate the error
-		let last_ff = ffs.last().unwrap();
-		let mut delta = cost_derivative(&last_ff.activation(), y);
+		let mut nabla: Vec<DeltaLayer> = Vec::with_capacity(self.layers.len());
+		for (i, layer) in self.layers.iter().enumerate().rev() {
+			let (_, z) = &azs[i];
+			let inputs = if i == 0 { x } else { &azs[i-1].0 };
+			let sp: Vector1D = z.iter().map(|&z| layer.activation_prime_of(z)).collect();
 
-		let mut nabla: Vec<DeltaLayer> = Vec::new();
-		for ((i, layer), ff) in self.layers.iter().enumerate().zip(ffs.iter()).rev() {
-			let inputs = if i == 0 { x } else { ffs[i-1].activation() };
-			let g = layer.backpropagate(&delta, ff, inputs);
-			delta = inputs.iter().enumerate()
-				.map(|(j, _)| g.neurons.iter().map(|n| n.weights[j]).sum())
-				.map(|s: f64| s / inputs.len() as f64)
-				.collect::<Vec<f64>>()
-				.into();
+			if i == self.layers.len() - 1 {
+				delta *= &sp;
+			} else {
+				let next_layer = &self.layers[i+1];
+				assert_eq!(next_layer.input_layer_size(), sp.len());
+				delta = sp.iter().enumerate()
+					.map(|(i, sp)| {
+						let d: f64 = next_layer.iter_nth_weights_of_neurons(i)
+							.zip(delta.iter())
+							.map(|(w, d)| w * d)
+							.sum();
+						d * sp
+					})
+					.collect()
+			};
+
+			let g = layer.backpropagate(&delta, inputs);
 			nabla.push(g);
 		}
+		
 		nabla.reverse();
 		nabla
 	}
@@ -360,5 +341,5 @@ impl Network {
 }
 
 fn cost_derivative(output_activations: &Vector1D, y: &Vector1D) -> Vector1D {
-	output_activations.sub(y)
+	output_activations.clone() - &y
 }
