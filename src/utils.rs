@@ -1,6 +1,8 @@
 use std::{fmt::{self, Display, Formatter}, iter::FromIterator, ops::{AddAssign, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign}};
 
 use make_it_braille::BrailleImg;
+use rand::Rng;
+use rand_distr::StandardNormal;
 
 #[derive(Debug, Clone)]
 pub struct Vector1D(Vec<f64>);
@@ -171,6 +173,27 @@ fn draw_image(img: &mut BrailleImg, pixels: &Vec<f64>, x: u32, y: u32) {
 	});
 }
 
+#[derive(Clone, Copy)]
+pub struct WeightsInitializer {
+	pub f: fn(weights_len: usize) -> Vector1D,
+}
+impl WeightsInitializer {
+	pub const DEFAULT: WeightsInitializer = WeightsInitializer {
+		f: |weights_len| {
+			let mut rng = rand::rng();
+			let random = |_| rng.sample::<f64,_>(StandardNormal) / (weights_len as f64).sqrt();
+			(0..weights_len).map(random).collect()
+		},
+	};
+	pub const LARGE: WeightsInitializer = WeightsInitializer {
+		f: |weights_len| {
+			let mut rng = rand::rng();
+			let random = |_| rng.random_range(-1.0..1.0);
+			(0..weights_len).map(random).collect()
+		},
+	};
+}
+
 pub fn sigmoid(o: f64) -> f64 {
 	1.0 / (1.0 + (-o).exp())
 }
@@ -192,5 +215,38 @@ impl ActivationFunction {
 	pub const NOOP: ActivationFunction = ActivationFunction {
 		f: |z| z,
 		prime: |_| 1.0,
+	};
+}
+
+#[derive(Clone, Copy)]
+pub struct CostFunction {
+	pub f: fn(a: &Vector1D, y: &Vector1D) -> f64,
+	pub derivative: fn(a: &Vector1D, y: &Vector1D) -> Vector1D,
+}
+impl CostFunction {
+	pub const QUADRATIC: CostFunction = CostFunction {
+		f: |a, y| {
+			assert_eq!(a.len(), y.len());
+			0.5 * a.iter().zip(y.iter())
+				.map(|(a, y)| (a - y).powi(2))
+				.sum::<f64>()
+		},
+		derivative: |a, y| a.clone() - y,
+	};
+	pub const CROSS_ENTROPY: CostFunction = CostFunction {
+		f: |a, y| {
+			assert_eq!(a.len(), y.len());
+			a.iter().zip(y.iter())
+				.map(|(a, y)| -y * a.ln() - (1.0 - y) * (1.0 - a).ln())
+				.sum::<f64>()
+		},
+		derivative: |a, y| {
+			assert_eq!(a.len(), y.len());
+			a.iter().zip(y.iter())
+				.map(|(&a, &y)| {
+					- y / a + (1.0 - y) / (1.0 - a)
+				})
+				.collect()
+		}
 	};
 }
