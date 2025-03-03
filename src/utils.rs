@@ -237,14 +237,26 @@ impl CostFunction {
 		f: |a, y| {
 			assert_eq!(a.len(), y.len());
 			a.iter().zip(y.iter())
-				.map(|(a, y)| -y * a.ln() - (1.0 - y) * (1.0 - a).ln())
+				.map(|(a, y)| {
+					if a - y == 0.0 {
+						0.0
+					} else {
+						-y * a.ln() - (1.0 - y) * (1.0 - a).ln()
+					}
+				})
 				.sum::<f64>()
 		},
 		derivative: |a, y| {
 			assert_eq!(a.len(), y.len());
 			a.iter().zip(y.iter())
 				.map(|(&a, &y)| {
-					- y / a + (1.0 - y) / (1.0 - a)
+					if a == 1.0 {
+						- y / a
+					} else if a == 0.0 {
+						(1.0 - y) / (1.0 - a)
+					} else {
+						- y / a + (1.0 - y) / (1.0 - a)
+					}
 				})
 				.collect()
 		}

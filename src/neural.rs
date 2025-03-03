@@ -127,6 +127,12 @@ impl Layer {
 	fn iter_nth_weights_of_neurons(&self, n: usize) -> impl Iterator<Item = f64> + '_ {
 		self.neurons.iter().map(move |neuron| neuron.weights[n])
 	}
+	fn iter_all_weights(&self) -> impl Iterator<Item = f64> + '_ {
+		self.neurons.iter().flat_map(|neuron| neuron.weights.iter().map(|&w| w))
+	}
+	fn iter_mut_all_weights(&mut self) -> impl Iterator<Item = &mut f64> {
+		self.neurons.iter_mut().flat_map(|neuron| neuron.weights.iter_mut())
+	}
 }
 impl AddAssign<&Self> for Layer {
 	fn add_assign(&mut self, rhs: &Self) {
@@ -197,7 +203,7 @@ impl Network {
 		training_data: &Vec<Vec<Vec<f64>>>,
 		test_data: &Vec<(Vec<f64>, i32)>,
 	) {
-		let TrainingOptions { mini_batch_size, eta, epochs, success_percentage } = *options;
+		let TrainingOptions { mini_batch_size, eta, epochs, success_percentage, lambda } = *options;
 
 		// Print evaluation result
 		let (correct_images, _) = self.evaluate(test_data);
@@ -208,12 +214,12 @@ impl Network {
 		let mut rng = rand::rng();
 
 		let mut idx = 0;
-		while idx <= epochs && accuracy < success_percentage {
+		while idx < epochs && accuracy < success_percentage {
 			let t = Local::now();
 
 			// learn from shuffled training data
 			td.shuffle(&mut rng);
-			let cost = self.learn_from_test_data(&td, eta, mini_batch_size);
+			let cost = self.start_learning(&td, eta, mini_batch_size, lambda);
 
 			// Print evaluation result
 			let (correct_images, _wrong_answers) = self.evaluate(test_data);
@@ -230,19 +236,19 @@ impl Network {
 	}
 
 	// returns the average cost
-	fn learn_from_test_data(&mut self, test_data: &[Vec<Vec<f64>>], eta: f64, mini_batch_size: usize) -> f64 {
-		let mini_batches = test_data.chunks(mini_batch_size);
+	fn start_learning(&mut self, traning_data: &[Vec<Vec<f64>>], eta: f64, mini_batch_size: usize, lambda: f64) -> f64 {
+		let mini_batches = traning_data.chunks(mini_batch_size);
 		let mut sum_cost = 0.0;
 
-		//// Apply backpropagation on mini_batches
+		// Apply backpropagation on mini_batches
 		for mb in mini_batches {
-			sum_cost += self.update_mini_batch(mb, eta);
+			sum_cost += self.update_mini_batch(mb, eta, lambda, traning_data.len());
 		}
-		sum_cost / test_data.len() as f64
+		sum_cost / traning_data.len() as f64
 	}
 
 	// returns the cost sum of the mini_batch
-	fn update_mini_batch(&mut self, mini_batch: &[Vec<Vec<f64>>], eta: f64) -> f64 {
+	fn update_mini_batch(&mut self, mini_batch: &[Vec<Vec<f64>>], eta: f64, lambda: f64, train_data_len: usize) -> f64 {
 		let mut gradients: Vec<DeltaLayer> = self.layers.iter()
 			.map(|layer| DeltaLayer::zero(layer.input_layer_size(), layer.size(), layer.af))
 			.collect();
@@ -260,10 +266,34 @@ impl Network {
 			sum_cost += cost;
 		}
 
+		// Regularization
+		if lambda != 0.0 {
+			let sum_of_squares_of_all_weights: f64 = self.iter_all_weights()
+					.map(|w| w.powi(2))
+					.sum::<f64>();
+			assert!(!sum_of_squares_of_all_weights.is_nan());
+			sum_cost += lambda * sum_of_squares_of_all_weights / 2.0 / train_data_len as f64;
+		}
+
 		// Update gradients
 		let m = mini_batch.len();
 		self.layers.iter_mut().zip(gradients.into_iter())
-			.for_each(|(layer, sum_nabla_for_layer)| *layer -= &(sum_nabla_for_layer * (eta / m as f64)));
+			.for_each(|(layer, gradients_for_layer)| {
+				if lambda != 0.0 {
+					let compute_delta_applied_weight = |w: f64, dw: f64| -> f64 {
+						(1.0 - eta * lambda / train_data_len as f64) * w - (eta / m as f64) * dw
+					};
+					layer.neurons.iter_mut().zip(gradients_for_layer.neurons.iter())
+						.for_each(|(neuron, delta_neuron)| {
+							neuron.weights.iter_mut().zip(delta_neuron.weights.iter())
+								.for_each(|(w, dw)| *w = compute_delta_applied_weight(*w, *dw));
+							neuron.bias -= delta_neuron.bias * (eta / m as f64);
+						});
+				} else {
+					*layer -= &(gradients_for_layer * (eta / m as f64));
+				}
+			});
+
 		sum_cost
 	}
 
@@ -320,7 +350,7 @@ impl Network {
 							.sum();
 						d * sp
 					})
-					.collect()
+					.collect();
 			};
 
 			let g = layer.backpropagate(&delta, inputs);
@@ -353,6 +383,10 @@ impl Network {
 			.sum();
 		(r, wrongs)
 	}
+
+	fn iter_all_weights(&self) -> impl Iterator<Item = f64> + '_ {
+		self.layers.iter().flat_map(|layer| layer.iter_all_weights())
+	}
 }
 
 pub struct TrainingOptions {
@@ -360,4 +394,5 @@ pub struct TrainingOptions {
 	pub success_percentage: f64,
 	pub mini_batch_size: usize,
 	pub eta: f64,
+	pub lambda: f64,
 }

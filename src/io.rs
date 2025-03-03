@@ -43,18 +43,18 @@ pub struct TrainData {
 	pub test_data: Vec<(Vec<f64>, i32)>,
 }
 
-pub fn import_images() -> TrainData {
+pub fn import_images(training_size: usize, test_size: usize) -> TrainData {
 	// Code was partly taken from this address (https://docs.rs/mnist/0.4.1/mnist/)
-	let (trn_size, rows, cols) = (50_000, 28, 28);
+	let (rows, cols) = (28, 28);
 
 	// Deconstruct the returned Mnist struct.
 	let Mnist { trn_img, trn_lbl, 
 				val_img: _, val_lbl: _, 
 				tst_img, tst_lbl } = MnistBuilder::new()
 		.label_format_digit()
-		.training_set_length(trn_size)
+		.training_set_length(training_size as u32)
 		//.validation_set_length(10_000)
-		.test_set_length(10_000)
+		.test_set_length(test_size as u32)
 		.base_path("data/")
 		.finalize();
 	
