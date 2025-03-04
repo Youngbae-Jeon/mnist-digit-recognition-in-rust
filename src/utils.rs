@@ -34,6 +34,10 @@ impl Vector1D {
 		self.0.copy_from_slice(slice);
 	}
 
+	pub fn fill(&mut self, val: f64) {
+		self.0.fill(val);
+	}
+
 	pub fn find_max(&self) -> (f64, usize) {
 		self.iter().enumerate()
 			.fold((0.0, 0), |(max_val, max_idx), (idx, &val)| {

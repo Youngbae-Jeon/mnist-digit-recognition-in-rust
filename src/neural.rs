@@ -206,7 +206,7 @@ impl Network {
 		let TrainingOptions { mini_batch_size, eta, epochs, success_percentage, lambda } = *options;
 
 		// Print evaluation result
-		let (correct_images, _) = self.evaluate(test_data);
+		let (correct_images, _, _) = self.evaluate(test_data);
 		let mut accuracy = correct_images as f64 / test_data.len() as f64;
 		println!("Epoch[0] {:.1}% ({}/{})", accuracy * 100.0, correct_images, test_data.len());
 
@@ -222,13 +222,13 @@ impl Network {
 			let cost = self.start_learning(&td, eta, mini_batch_size, lambda);
 
 			// Print evaluation result
-			let (correct_images, _wrong_answers) = self.evaluate(test_data);
+			let (correct_images, eval_cost, _wrong_answers) = self.evaluate(test_data);
 			accuracy = correct_images as f64 / test_data.len() as f64;
 
 			//_wrong_answers.dump();
-			println!("Epoch[{}] {:.1}% ({}/{}, eta={:.1}%, cost={:.4}, {}s delayed)",
+			println!("Epoch[{}] {:.1}% ({}/{}, eta={:.1}%, cost(t)={:.4}, cost(e)={:.4}, {}s delayed)",
 				idx+1, accuracy * 100.0, correct_images, test_data.len(),
-				eta * 100.0, cost,
+				eta * 100.0, cost, eval_cost,
 				(Local::now() - t).num_seconds());
 
 			idx = idx + 1;
@@ -244,7 +244,7 @@ impl Network {
 		for mb in mini_batches {
 			sum_cost += self.update_mini_batch(mb, eta, lambda, traning_data.len());
 		}
-		sum_cost / traning_data.len() as f64
+		sum_cost
 	}
 
 	// returns the cost sum of the mini_batch
@@ -261,9 +261,10 @@ impl Network {
 			let label: Vector1D = mb[1].clone().into();
 			let (g, cost) = self.backpropagate(&data, &label);
 
+			// variable `gradients` stands for sum of gradients in mini_batch
 			gradients.iter_mut().zip(g.iter())
 				.for_each(|(sum, n)| *sum += n);
-			sum_cost += cost;
+			sum_cost += cost / train_data_len as f64;
 		}
 
 		// Regularization
@@ -272,7 +273,7 @@ impl Network {
 					.map(|w| w.powi(2))
 					.sum::<f64>();
 			assert!(!sum_of_squares_of_all_weights.is_nan());
-			sum_cost += lambda * sum_of_squares_of_all_weights / 2.0 / train_data_len as f64;
+			sum_cost += (lambda / (2.0 * train_data_len as f64) * sum_of_squares_of_all_weights) / train_data_len as f64;
 		}
 
 		// Update gradients
@@ -280,14 +281,15 @@ impl Network {
 		self.layers.iter_mut().zip(gradients.into_iter())
 			.for_each(|(layer, gradients_for_layer)| {
 				if lambda != 0.0 {
+					let weight_decay_factor = 1.0 - eta * lambda / train_data_len as f64;
 					let compute_delta_applied_weight = |w: f64, dw: f64| -> f64 {
-						(1.0 - eta * lambda / train_data_len as f64) * w - (eta / m as f64) * dw
+						weight_decay_factor * w - (eta / m as f64) * dw
 					};
 					layer.neurons.iter_mut().zip(gradients_for_layer.neurons.iter())
 						.for_each(|(neuron, delta_neuron)| {
 							neuron.weights.iter_mut().zip(delta_neuron.weights.iter())
 								.for_each(|(w, dw)| *w = compute_delta_applied_weight(*w, *dw));
-							neuron.bias -= delta_neuron.bias * (eta / m as f64);
+							neuron.bias -= (eta / m as f64) * delta_neuron.bias;
 						});
 				} else {
 					*layer -= &(gradients_for_layer * (eta / m as f64));
@@ -362,26 +364,33 @@ impl Network {
 	}
 
 	// returns (the number of correct answers, cost, and wrong answers)
-	fn evaluate<'a>(&self, test_data: &'a Vec<(Vec<f64>, i32)>) -> (i32, WrongAnswers<'a>) {
+	fn evaluate<'a>(&self, test_data: &'a Vec<(Vec<f64>, i32)>) -> (i32, f64, WrongAnswers<'a>) {
 		// Returns the sum of correctly assigned test inputs.
 		let test_input_size = test_data[0].0.len();
 		let mut x_vector = Vector1D::zero(test_input_size);
+		let mut y_vector = Vector1D::zero(10);
 
 		let mut wrongs = WrongAnswers::new();
+		let mut cost = 0.0;
 		let r = test_data.iter()
-			.map(|(x, y)| {
+			.map(|(x, digit)| {
 				x_vector.copy_from_slice(x);
+				y_vector.fill(0.0);
+				y_vector[*digit as usize] = 1.0;
 
-				let answer = self.predict(&x_vector);
-				if answer == *y {
+				let a = self.feedforward(&x_vector);
+				cost += (self.cf.f)(&a, &y_vector) / test_data.len() as f64;
+
+				let (_possibility, guess) = a.find_max();
+				if guess as i32 == *digit {
 					1
 				} else {
-					wrongs.push((x, *y, answer));
+					wrongs.push((x, *digit, guess as i32));
 					0
 				}
 			})
 			.sum();
-		(r, wrongs)
+		(r, cost, wrongs)
 	}
 
 	fn iter_all_weights(&self) -> impl Iterator<Item = f64> + '_ {
