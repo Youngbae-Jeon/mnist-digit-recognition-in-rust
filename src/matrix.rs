@@ -1,4 +1,4 @@
-use std::{fmt::Display, ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign}};
+use std::{fmt::Display, ops::{Add, AddAssign, Index, Mul, MulAssign, Sub, SubAssign}};
 
 #[derive(Clone)]
 pub struct Matrix {
@@ -19,11 +19,21 @@ impl Matrix {
 	pub fn zero(shape: (usize, usize)) -> Self {
 		Self::new(shape, vec![0.0; shape.0 * shape.1])
 	}
-	pub fn nth_row(&self, row: usize) -> impl Iterator<Item = &f64> {
-		self.data.iter().skip(row * self.shape.1).take(self.shape.1)
+	pub fn row(&self, row: usize) -> MatrixVectorView<'_> {
+		MatrixVectorView {
+			mat: self,
+			offset: row * self.shape.1,
+			step: 1,
+			len: self.shape.1,
+		}
 	}
-	pub fn nth_col(&self, col: usize) -> impl Iterator<Item = &f64> {
-		self.data.iter().skip(col).step_by(self.shape.1)
+	pub fn column(&self, col: usize) -> MatrixVectorView<'_> {
+		MatrixVectorView {
+			mat: self,
+			offset: col,
+			step: self.shape.1,
+			len: self.shape.0,
+		}
 	}
 	pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f64> {
 		self.data.iter_mut()
@@ -35,8 +45,8 @@ impl Matrix {
 
 		for i in 0..rows {
 			for j in 0..cols {
-				data[i * cols + j] = self.nth_row(i)
-					.zip(other.nth_col(j))
+				data[i * cols + j] = self.row(i).iter()
+					.zip(other.column(j))
 					.map(|(a, b)| a * b)
 					.sum();
 			}
@@ -51,8 +61,8 @@ impl Matrix {
 
 		for i in 0..rows {
 			for j in 0..cols {
-				data[i * cols + j] = self.nth_row(i)
-					.zip(other.nth_row(j))
+				data[i * cols + j] = self.row(i).iter()
+					.zip(other.row(j))
 					.map(|(a, b)| a * b)
 					.sum();
 			}
@@ -67,8 +77,8 @@ impl Matrix {
 
 		for i in 0..rows {
 			for j in 0..cols {
-				data[i * cols + j] = self.nth_col(i)
-					.zip(other.nth_col(j))
+				data[i * cols + j] = self.column(i).iter()
+					.zip(other.column(j))
 					.map(|(a, b)| a * b)
 					.sum();
 			}
@@ -188,5 +198,69 @@ impl Mul<f64> for Matrix {
 impl Display for Matrix {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "Matrix{{{}x{}}}", self.shape.0, self.shape.1)
+	}
+}
+
+#[derive(Clone)]
+pub struct MatrixVectorView<'a> {
+	mat: &'a Matrix,
+	offset: usize,
+	step: usize,
+	len: usize,
+}
+impl MatrixVectorView<'_> {
+	pub fn len(&self) -> usize {
+		self.len
+	}
+	pub fn iter(&self) -> MatrixVectorViewIterator {
+		MatrixVectorViewIterator {
+			view: self.clone(),
+			index: 0,
+		}
+	}
+	pub fn argmax(&self) -> usize {
+		self.iter().enumerate()
+			.max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+			.unwrap()
+			.0
+	}
+}
+impl Index<usize> for MatrixVectorView<'_> {
+	type Output = f64;
+
+	fn index(&self, index: usize) -> &Self::Output {
+		if index >= self.len {
+			panic!("index out of bounds");
+		}
+		&self.mat.data[self.offset + index * self.step]
+	}
+}
+impl<'a> IntoIterator for MatrixVectorView<'a> {
+	type Item = f64;
+	type IntoIter = MatrixVectorViewIterator<'a>;
+
+	fn into_iter(self) -> Self::IntoIter {
+		MatrixVectorViewIterator {
+			view: self,
+			index: 0,
+		}
+	}
+}
+
+pub struct MatrixVectorViewIterator<'a> {
+	view: MatrixVectorView<'a>,
+	index: usize,
+}
+impl Iterator for MatrixVectorViewIterator<'_> {
+	type Item = f64;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.index < self.view.len() {
+			let value = self.view[self.index];
+			self.index += 1;
+			Some(value)
+		} else {
+			None
+		}
 	}
 }

@@ -266,18 +266,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "imagerecognizer"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "image 0.23.14",
- "make_it_braille",
- "mnist",
- "rand",
- "rand_distr",
-]
-
-[[package]]
 name = "jpeg-decoder"
 version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -367,6 +355,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fd2e5236a5f13d41d4f6eba34f535d037cb9fc4b244896886a7ebe0764142a5"
 dependencies = [
  "byteorder",
+]
+
+[[package]]
+name = "my-neural-mnist"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "image 0.23.14",
+ "make_it_braille",
+ "mnist",
+ "rand",
+ "rand_distr",
 ]
 
 [[package]]

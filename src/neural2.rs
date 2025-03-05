@@ -1,10 +1,13 @@
 use chrono::Local;
 use rand::{seq::SliceRandom, Rng};
+use rand_distr::StandardNormal;
 
 use crate::{matrix::Matrix, utils::{sigmoid, sigmoid_prime, TrainingOptions}};
 
 struct Layer {
+	/// matrix of shape (neurons_len, weights_len)
 	weights: Matrix,
+	/// matrix of shape (neurons_len, 1)
 	biases: Matrix,
 }
 impl Layer {
@@ -20,8 +23,6 @@ pub struct Network {
 
 impl Network {
 	pub fn new (sizes: &[usize]) -> Self {
-		let mut rng = rand::rng();
-
 		Self {
 			sizes: sizes.to_vec(),
 			layers: sizes.windows(2)
@@ -29,10 +30,12 @@ impl Network {
 					let weights_len = w[0];
 					let neurons_len = w[1];
 					let weights_data: Vec<f64> = (0..(weights_len * neurons_len))
-						.map(|_| rng.random_range(-1.0..1.0))
+						.map(|_| rand::rng().sample(StandardNormal))
+						// .map(|_| rng.random_range(-1.0..1.0))
 						.collect();
 					let biases_data: Vec<f64> = (0..neurons_len)
-						.map(|_| rng.random_range(-1.0..1.0))
+						.map(|_| rand::rng().sample(StandardNormal))
+						// .map(|_| rng.random_range(-1.0..1.0))
 						.collect();
 					Layer {
 						weights: Matrix::new((neurons_len, weights_len), weights_data),
@@ -47,13 +50,12 @@ impl Network {
 		let ff = self.layers.iter()
 			.fold(x, |x, layer| {
 				assert_eq!(x.shape.0, layer.weights.shape.1);
-				let a = Matrix::update(layer.weights.dot(&x) + &layer.biases, sigmoid);
+				let z = layer.weights.dot(&x) + &layer.biases;
+				let a = Matrix::update(z, sigmoid);
 				assert_eq!(a.shape.0, layer.size());
 				assert_eq!(a.shape.1, 1);
 				a
 			});
-		//println!("x: {:?}", x.iter().sum::<f64>());
-		//println!("ff: {:?}", ff.iter().sum::<f64>());
 		assert_eq!(ff.shape, (10, 1));
 		ff
 	}
@@ -175,14 +177,9 @@ impl Network {
 			.map(|(x, y)| {
 				let x = Matrix::from(x.clone());
 				let ff = self.feedforward(x);
-				(argmax(ff.nth_col(0)), *y as usize)
+				(ff.column(0).argmax(), *y as usize)
 			})
 			.filter(|(x, y)| x == y)
 			.count()
 	}
-}
-
-
-fn argmax<'a>(v: impl Iterator<Item = &'a f64>) -> usize {
-	v.enumerate().max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap()).unwrap().0
 }

@@ -1,5 +1,5 @@
 [package]
-name = "imagerecognizer"
+name = "my-neural-mnist"
 version = "0.1.0"
 authors = ["wolfandreh <wolf-andre_hummel@live.de>"]
 edition = "2018"
