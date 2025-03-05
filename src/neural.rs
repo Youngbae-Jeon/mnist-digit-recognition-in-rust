@@ -3,7 +3,7 @@ use std::ops::{AddAssign, Div, DivAssign, Mul, MulAssign, SubAssign};
 use chrono::Local;
 use rand::{seq::SliceRandom, Rng};
 
-use crate::utils::{ActivationFunction, CostFunction, Vector1D, WeightsInitializer, WrongAnswers};
+use crate::utils::{ActivationFunction, CostFunction, TrainingOptions, Vector1D, WeightsInitializer, WrongAnswers};
 
 #[derive(Debug)]
 struct Neuron {
@@ -128,7 +128,7 @@ impl Layer {
 		self.neurons.iter().map(move |neuron| neuron.weights[n])
 	}
 	fn iter_all_weights(&self) -> impl Iterator<Item = f64> + '_ {
-		self.neurons.iter().flat_map(|neuron| neuron.weights.iter().map(|&w| w))
+		self.neurons.iter().flat_map(|neuron| neuron.weights.iter().copied())
 	}
 	fn iter_mut_all_weights(&mut self) -> impl Iterator<Item = &mut f64> {
 		self.neurons.iter_mut().flat_map(|neuron| neuron.weights.iter_mut())
@@ -188,7 +188,7 @@ impl Network {
 			.map(|pair| {
 				let wi = WeightsInitializer::DEFAULT;
 				let af = ActivationFunction::SIGMOID;
-				Layer::new(pair[0] as usize, pair[1] as usize, wi, af)
+				Layer::new(pair[0], pair[1], wi, af)
 			})
 			.collect();
 		Self {
@@ -200,8 +200,8 @@ impl Network {
 	pub fn sgd(
 		&mut self,
 		options: &TrainingOptions,
-		training_data: &Vec<Vec<Vec<f64>>>,
-		test_data: &Vec<(Vec<f64>, i32)>,
+		training_data: &[Vec<Vec<f64>>],
+		test_data: &[(Vec<f64>, i32)],
 	) {
 		let TrainingOptions { mini_batch_size, eta, epochs, success_percentage, lambda } = *options;
 
@@ -210,7 +210,7 @@ impl Network {
 		let mut accuracy = correct_images as f64 / test_data.len() as f64;
 		println!("Epoch[0] {:.1}% ({}/{})", accuracy * 100.0, correct_images, test_data.len());
 
-		let mut td = training_data.clone();
+		let mut td = training_data.to_owned();
 		let mut rng = rand::rng();
 
 		let mut idx = 0;
@@ -231,7 +231,7 @@ impl Network {
 				eta * 100.0, cost, eval_cost,
 				(Local::now() - t).num_seconds());
 
-			idx = idx + 1;
+			idx += 1;
 		}
 	}
 
@@ -278,7 +278,7 @@ impl Network {
 
 		// Update gradients
 		let m = mini_batch.len();
-		self.layers.iter_mut().zip(gradients.into_iter())
+		self.layers.iter_mut().zip(gradients)
 			.for_each(|(layer, gradients_for_layer)| {
 				if lambda != 0.0 {
 					let weight_decay_factor = 1.0 - eta * lambda / train_data_len as f64;
@@ -304,9 +304,7 @@ impl Network {
 	pub fn feedforward(&self, x: &Vector1D) -> Vector1D {
 		self.layers.iter()
 			.fold(x.clone(), |a, layer| {
-				layer.feedforward(&a).0.iter()
-					.map(|a| *a)
-					.collect()
+				layer.feedforward(&a).0.iter().copied().collect()
 			})
 	}
 
@@ -364,7 +362,7 @@ impl Network {
 	}
 
 	// returns (the number of correct answers, cost, and wrong answers)
-	fn evaluate<'a>(&self, test_data: &'a Vec<(Vec<f64>, i32)>) -> (i32, f64, WrongAnswers<'a>) {
+	fn evaluate<'a>(&self, test_data: &'a [(Vec<f64>, i32)]) -> (i32, f64, WrongAnswers<'a>) {
 		// Returns the sum of correctly assigned test inputs.
 		let test_input_size = test_data[0].0.len();
 		let mut x_vector = Vector1D::zero(test_input_size);
@@ -396,12 +394,4 @@ impl Network {
 	fn iter_all_weights(&self) -> impl Iterator<Item = f64> + '_ {
 		self.layers.iter().flat_map(|layer| layer.iter_all_weights())
 	}
-}
-
-pub struct TrainingOptions {
-	pub epochs: usize,
-	pub success_percentage: f64,
-	pub mini_batch_size: usize,
-	pub eta: f64,
-	pub lambda: f64,
 }

@@ -168,7 +168,7 @@ fn dump_wrong_chunk(chunk: &[(&Vec<f64>, i32, i32)]) {
 	println!("{}", guesses);
 }
 
-fn draw_image(img: &mut BrailleImg, pixels: &Vec<f64>, x: u32, y: u32) {
+fn draw_image(img: &mut BrailleImg, pixels: &[f64], x: u32, y: u32) {
 	pixels.chunks(28).enumerate().for_each(|(y1, rows)| {
 		rows.iter().enumerate().for_each(|(x1, val)| {
 			img.set_dot(x + x1 as u32, y + y1 as u32, *val > 0.5)
@@ -265,4 +265,12 @@ impl CostFunction {
 				.collect()
 		}
 	};
+}
+
+pub struct TrainingOptions {
+	pub epochs: usize,
+	pub success_percentage: f64,
+	pub mini_batch_size: usize,
+	pub eta: f64,
+	pub lambda: f64,
 }

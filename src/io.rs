@@ -94,9 +94,9 @@ fn pack_images_vec(input_vector: Vec<u8>, rows: u8, cols: u8) -> Vec<Vec<f64>> {
 	target_vec
 }
 
-fn pack_training_data(data: &Vec<Vec<f64>>, label: &Vec<u8>) -> Vec<Vec<Vec<f64>>> {
+fn pack_training_data(data: &[Vec<f64>], label: &[u8]) -> Vec<Vec<Vec<f64>>> {
 	let mut td: Vec<Vec<Vec<f64>>> = Vec::new();
-	let num_vec: Vec<Vec<f64>> = label.iter().map(|x| vectorise_num(x)).collect();
+	let num_vec: Vec<Vec<f64>> = label.iter().map(vectorise_num).collect();
 
 	for (x, y) in data.iter().zip(&num_vec) {
 		td.push(vec![x.clone(), y.clone()])
@@ -104,7 +104,7 @@ fn pack_training_data(data: &Vec<Vec<f64>>, label: &Vec<u8>) -> Vec<Vec<Vec<f64>
 	td
 }
 
-fn pack_vector_data(data: &Vec<Vec<f64>>, label: &Vec<u8>) -> Vec<(Vec<f64>, i32)>{
+fn pack_vector_data(data: &[Vec<f64>], label: &Vec<u8>) -> Vec<(Vec<f64>, i32)>{
 	let mut result: Vec<(Vec<f64>, i32)> = Vec::new();
 	for (x, y) in data.iter().zip(label) {
 		result.push((x.clone(), *y as i32))
