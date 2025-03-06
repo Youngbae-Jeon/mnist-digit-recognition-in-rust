@@ -94,17 +94,17 @@ impl Network {
 			let z = &zs[zs.len() - l];
 			let sp = Matrix::update(z.clone(), sigmoid_prime);
 
-			let next_layer = &self.layers[self.layers.len() - l + 1];
+			let later_layer = &self.layers[self.layers.len() - l + 1];
 
-			assert_eq!(delta.shape.0, next_layer.weights.shape.0);
-			let weights_len_of_next_layer = next_layer.weights.shape.1;
-			assert_eq!(weights_len_of_next_layer, 30); // == neuron len of this layer
-			assert_eq!(z.shape.0, weights_len_of_next_layer);
-			assert_eq!(sp.shape.0, weights_len_of_next_layer);
+			assert_eq!(delta.shape.0, later_layer.weights.shape.0);
+			let neurons_len_of_this_layer = later_layer.weights.shape.1;
+			assert_eq!(neurons_len_of_this_layer, neurons_len_of_this_layer);
+			assert_eq!(z.shape.0, neurons_len_of_this_layer);
+			assert_eq!(sp.shape.0, neurons_len_of_this_layer);
 
 			//delta = next_layer.weights.transpose().dot(&delta) * sp;
-			delta = next_layer.weights.transpose_dot(&delta) * sp;
-			assert_eq!(delta.shape.0, 30);
+			delta = later_layer.weights.transpose_dot(&delta) * sp;
+			assert_eq!(delta.shape.0, neurons_len_of_this_layer);
 
 			reversed_nabla.push(Layer {
 				weights: delta.dot_transpose(&activations[activations.len() - l - 1]),
@@ -155,6 +155,9 @@ impl Network {
 		training_data: &[Vec<Vec<f64>>],
 		test_data: &[(Vec<f64>, i32)],
 	) {
+		let score = self.evaluate(test_data);
+		println!("Epoch 0: {}/{}", score, test_data.len());
+
 		let mut rng = rand::rng();
 		for epoch in 0..options.epochs {
 			let t = Local::now();
@@ -166,9 +169,8 @@ impl Network {
 			}
 
 			let score = self.evaluate(test_data);
-			println!("Epoch {}: {}/{} {}s elapsed",
-				epoch, score, test_data.len(),
-				(Local::now() - t).num_seconds());
+			let elapsed = (Local::now() - t).num_milliseconds() as f64 / 1000.0;
+			println!("Epoch {}: {}/{} {:.1}s elapsed", epoch + 1, score, test_data.len(), elapsed);
 		}
 	}
 

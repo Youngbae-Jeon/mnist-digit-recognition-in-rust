@@ -7,7 +7,7 @@ mod matrix;
 use utils::TrainingOptions;
 
 fn main() {
-	let data = io::import_images(10_000, 10_000);
+	let data = io::import_images(50_000, 10_000);
 
 	let mut network = neural2::Network::new(&[784, 30, 10]);
 	network.sgd(

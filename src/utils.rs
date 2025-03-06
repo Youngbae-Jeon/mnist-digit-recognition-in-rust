@@ -192,7 +192,7 @@ impl WeightsInitializer {
 	pub const LARGE: WeightsInitializer = WeightsInitializer {
 		f: |weights_len| {
 			let mut rng = rand::rng();
-			let random = |_| rng.random_range(-1.0..1.0);
+			let random = |_| rng.sample::<f64,_>(StandardNormal);
 			(0..weights_len).map(random).collect()
 		},
 	};

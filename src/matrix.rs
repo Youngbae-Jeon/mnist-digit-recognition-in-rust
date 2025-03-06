@@ -20,20 +20,10 @@ impl Matrix {
 		Self::new(shape, vec![0.0; shape.0 * shape.1])
 	}
 	pub fn row(&self, row: usize) -> MatrixVectorView<'_> {
-		MatrixVectorView {
-			mat: self,
-			offset: row * self.shape.1,
-			step: 1,
-			len: self.shape.1,
-		}
+		MatrixVectorView::new_for_row(self, row)
 	}
 	pub fn column(&self, col: usize) -> MatrixVectorView<'_> {
-		MatrixVectorView {
-			mat: self,
-			offset: col,
-			step: self.shape.1,
-			len: self.shape.0,
-		}
+		MatrixVectorView::new_for_column(self, col)
 	}
 	pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f64> {
 		self.data.iter_mut()
@@ -45,10 +35,7 @@ impl Matrix {
 
 		for i in 0..rows {
 			for j in 0..cols {
-				data[i * cols + j] = self.row(i).iter()
-					.zip(other.column(j))
-					.map(|(a, b)| a * b)
-					.sum();
+				data[i * cols + j] = self.row(i).dot(&other.column(j));
 			}
 		}
 		Matrix::new((rows, cols), data)
@@ -61,10 +48,7 @@ impl Matrix {
 
 		for i in 0..rows {
 			for j in 0..cols {
-				data[i * cols + j] = self.row(i).iter()
-					.zip(other.row(j))
-					.map(|(a, b)| a * b)
-					.sum();
+				data[i * cols + j] = self.row(i).dot(&other.row(j));
 			}
 		}
 		Matrix::new((rows, cols), data)
@@ -77,10 +61,7 @@ impl Matrix {
 
 		for i in 0..rows {
 			for j in 0..cols {
-				data[i * cols + j] = self.column(i).iter()
-					.zip(other.column(j))
-					.map(|(a, b)| a * b)
-					.sum();
+				data[i * cols + j] = self.column(i).dot(&other.column(j));
 			}
 		}
 		Matrix::new((rows, cols), data)
@@ -203,26 +184,46 @@ impl Display for Matrix {
 
 #[derive(Clone)]
 pub struct MatrixVectorView<'a> {
-	mat: &'a Matrix,
+	data: &'a [f64],
 	offset: usize,
 	step: usize,
 	len: usize,
 }
 impl MatrixVectorView<'_> {
+	pub fn new_for_row(mat: &Matrix, row_index: usize) -> MatrixVectorView<'_> {
+		MatrixVectorView {
+			data: &mat.data,
+			offset: row_index * mat.shape.1,
+			step: 1,
+			len: mat.shape.1,
+		}
+	}
+	pub fn new_for_column(mat: &Matrix, col_index: usize) -> MatrixVectorView<'_> {
+		MatrixVectorView {
+			data: &mat.data,
+			offset: col_index,
+			step: mat.shape.1,
+			len: mat.shape.0,
+		}
+	}
 	pub fn len(&self) -> usize {
 		self.len
 	}
 	pub fn iter(&self) -> MatrixVectorViewIterator {
-		MatrixVectorViewIterator {
-			view: self.clone(),
-			index: 0,
+		self.clone().into_iter()
+	}
+	pub fn dot(&self, other: &MatrixVectorView) -> f64 {
+		assert_eq!(self.len, other.len);
+		let mut sum = 0.0;
+		for i in 0..self.len {
+			sum += self[i] * other[i];
 		}
+		sum
 	}
 	pub fn argmax(&self) -> usize {
 		self.iter().enumerate()
 			.max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-			.unwrap()
-			.0
+			.map_or(0, |(i, _)| i)
 	}
 }
 impl Index<usize> for MatrixVectorView<'_> {
@@ -232,7 +233,7 @@ impl Index<usize> for MatrixVectorView<'_> {
 		if index >= self.len {
 			panic!("index out of bounds");
 		}
-		&self.mat.data[self.offset + index * self.step]
+		&self.data[self.offset + index * self.step]
 	}
 }
 impl<'a> IntoIterator for MatrixVectorView<'a> {
