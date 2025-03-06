@@ -1,4 +1,11 @@
 // ported from network.py
+// ----------------------
+// A module to implement the stochastic gradient descent learning
+// algorithm for a feedforward neural network.  Gradients are calculated
+// using backpropagation.  Note that I have focused on making the code
+// simple, easily readable, and easily modifiable.  It is not optimized,
+// and omits many desirable features.
+
 use chrono::Local;
 use rand::{seq::SliceRandom, Rng};
 use rand_distr::StandardNormal;
@@ -23,6 +30,16 @@ pub struct Network {
 }
 
 impl Network {
+	/// The list ``shape`` contains the number of neurons in the
+	/// respective layers of the network.  For example, if the list
+	/// was [2, 3, 1] then it would be a three-layer network, with the
+	/// first layer containing 2 neurons, the second layer 3 neurons,
+	/// and the third layer 1 neuron.  The biases and weights for the
+	/// network are initialized randomly, using a Gaussian
+	/// distribution with mean 0, and variance 1.  Note that the first
+	/// layer is assumed to be an input layer, and by convention we
+	/// won't set any biases for those neurons, since biases are only
+	/// ever used in computing the outputs from later layers.
 	pub fn new (shape: &[usize]) -> Self {
 		Self {
 			shape: shape.to_vec(),
@@ -47,6 +64,7 @@ impl Network {
 		}
 	}
 
+	/// Return the output of the network if ``x`` is input.
 	fn feedforward(&self, x: Matrix) -> Matrix {
 		let ff = self.layers.iter()
 			.fold(x, |x, layer| {
@@ -61,95 +79,14 @@ impl Network {
 		ff
 	}
 
-	/// returns a tuple (nabla_b, nabla_w) representing the gradient for the cost function C(x).
-	fn backprop(&self, x: Matrix, y: Matrix) -> Vec<Layer> {
-		let mut reversed_nabla: Vec<Layer> = Vec::with_capacity(self.layers.len());
-
-		// feedforward
-		let mut activations = Vec::with_capacity(self.layers.len() + 1);
-		activations.push(x);
-		let mut zs: Vec<Matrix> = Vec::with_capacity(self.layers.len());
-
-		for layer in self.layers.iter() {
-			let x = activations.last().unwrap();
-			let z = layer.weights.dot(x) + &layer.biases;
-			zs.push(z.clone());
-
-			let a = Matrix::update(z, sigmoid);
-			activations.push(a);
-		}
-
-		// backward pass
-		let cost_derivative = activations.last().unwrap().clone() - y;
-		let sp = Matrix::update(zs.last().unwrap().clone(), sigmoid_prime);
-		assert_eq!(cost_derivative.shape, sp.shape);
-
-		let mut delta = cost_derivative * sp;
-		reversed_nabla.push(Layer {
-			//weights: delta.dot(&activations[activations.len() - 2].transpose()),
-			weights: delta.dot_transpose(&activations[activations.len() - 2]),
-			biases: delta.clone(),
-		});
-
-		for l in 2..(self.shape.len()) {
-			let z = &zs[zs.len() - l];
-			let sp = Matrix::update(z.clone(), sigmoid_prime);
-
-			let later_layer = &self.layers[self.layers.len() - l + 1];
-
-			assert_eq!(delta.shape.0, later_layer.weights.shape.0);
-			let neurons_len_of_this_layer = later_layer.weights.shape.1;
-			assert_eq!(neurons_len_of_this_layer, neurons_len_of_this_layer);
-			assert_eq!(z.shape.0, neurons_len_of_this_layer);
-			assert_eq!(sp.shape.0, neurons_len_of_this_layer);
-
-			//delta = next_layer.weights.transpose().dot(&delta) * sp;
-			delta = later_layer.weights.transpose_dot(&delta) * sp;
-			assert_eq!(delta.shape.0, neurons_len_of_this_layer);
-
-			reversed_nabla.push(Layer {
-				weights: delta.dot_transpose(&activations[activations.len() - l - 1]),
-				//weights: delta.dot(&activations[activations.len() - l - 1].transpose()),
-				biases: delta.clone(),
-			});
-		}
-
-		reversed_nabla.reverse();
-		reversed_nabla
-	}
-
-	pub fn update_mini_batch(&mut self, mini_batch: &[Vec<Vec<f64>>], eta: f64) {
-		let mut nabla: Vec<Layer> = self.layers.iter()
-			.map(|layer| Layer {
-				weights: Matrix::zero(layer.weights.shape),
-				biases: Matrix::zero(layer.biases.shape),
-			})
-			.collect();
-
-		for mb in mini_batch {
-			assert_eq!(mb.len(), 2);
-
-			let x = Matrix::from(mb[0].to_vec());
-			let y = Matrix::from(mb[1].to_vec());
-
-			let delta_nabla = self.backprop(x, y);
-			assert_eq!(delta_nabla.len(), nabla.len());
-
-			nabla.iter_mut().zip(delta_nabla.into_iter())
-				.for_each(|(n, dn)| {
-					n.weights += dn.weights;
-					n.biases += dn.biases;
-				});
-		}
-
-		let m = mini_batch.len() as f64;
-		self.layers.iter_mut().zip(nabla)
-			.for_each(|(layer, n)| {
-				layer.weights -= n.weights * (eta / m);
-				layer.biases -= n.biases * (eta / m);
-			});
-	}
-		
+	/// Train the neural network using mini-batch stochastic
+	/// gradient descent.  The ``training_data`` is a list of tuples
+	/// ``(x, y)`` representing the training inputs and the desired
+	/// outputs.  The other non-optional parameters are
+	/// self-explanatory.  If ``test_data`` is provided then the
+	/// network will be evaluated against the test data after each
+	/// epoch, and partial progress printed out.  This is useful for
+	/// tracking progress, but slows things down substantially.
 	pub fn sgd(
 		&mut self,
 		options: &TrainingOptions,
@@ -182,6 +119,108 @@ impl Network {
 		}
 	}
 
+	/// Update the network's weights and biases by applying
+	/// gradient descent using backpropagation to a single mini batch.
+	/// The ``mini_batch`` is a list of tuples ``(x, y)``, and ``eta``
+	/// is the learning rate.
+	pub fn update_mini_batch(&mut self, mini_batch: &[Vec<Vec<f64>>], eta: f64) {
+		let mut nabla: Vec<Layer> = self.layers.iter()
+			.map(|layer| Layer {
+				weights: Matrix::zero(layer.weights.shape),
+				biases: Matrix::zero(layer.biases.shape),
+			})
+			.collect();
+
+		for mb in mini_batch {
+			assert_eq!(mb.len(), 2);
+
+			let x = Matrix::from(mb[0].to_vec());
+			let y = Matrix::from(mb[1].to_vec());
+
+			let delta_nabla = self.backprop(x, y);
+			assert_eq!(delta_nabla.len(), nabla.len());
+
+			nabla.iter_mut().zip(delta_nabla.into_iter())
+				.for_each(|(n, dn)| {
+					n.weights += dn.weights;
+					n.biases += dn.biases;
+				});
+		}
+
+		let m = mini_batch.len() as f64;
+		self.layers.iter_mut().zip(nabla)
+			.for_each(|(layer, n)| {
+				layer.weights -= n.weights * (eta / m);
+				layer.biases -= n.biases * (eta / m);
+			});
+	}
+
+	/// Return a struct ``Layer { weights: nabla_w, biases: nabla_b }`` representing the
+	/// gradient for the cost function C_x.
+	fn backprop(&self, x: Matrix, y: Matrix) -> Vec<Layer> {
+		let mut reversed_nabla: Vec<Layer> = Vec::with_capacity(self.layers.len());
+
+		// feedforward
+		let mut activations = Vec::with_capacity(self.layers.len() + 1); // list to store all the activations, layer by layer
+		activations.push(x);
+		let mut zs: Vec<Matrix> = Vec::with_capacity(self.layers.len()); // list to store all the z vectors, layer by layer
+
+		for layer in self.layers.iter() {
+			let x = activations.last().unwrap();
+			let z = layer.weights.dot(x) + &layer.biases;
+			zs.push(z.clone());
+
+			let a = Matrix::update(z, sigmoid);
+			activations.push(a);
+		}
+
+		// backward pass
+		let cost_derivative = activations.last().unwrap().clone() - y;
+		let sp = Matrix::update(zs.last().unwrap().clone(), sigmoid_prime);
+		assert_eq!(cost_derivative.shape, sp.shape);
+
+		let mut delta = cost_derivative * sp;
+		reversed_nabla.push(Layer {
+			//weights: delta.dot(&activations[activations.len() - 2].transpose()),
+			weights: delta.dot_transpose(&activations[activations.len() - 2]),
+			biases: delta.clone(),
+		});
+
+		// Note that the variable l in the loop below is used a little
+		// differently to the notation in Chapter 2 of the book.  Here,
+		// l = 1 means the last layer of neurons, l = 2 is the
+		// second-last layer, and so on.  It's a renumbering of the
+		// scheme in the book, used here to take advantage of the fact
+		// that Python can use negative indices in lists.
+		for l in 2..(self.shape.len()) {
+			let z = &zs[zs.len() - l];
+			let sp = Matrix::update(z.clone(), sigmoid_prime);
+
+			let later_layer = &self.layers[self.layers.len() - l + 1];
+
+			assert_eq!(delta.shape.0, later_layer.weights.shape.0);
+			let neurons_len_of_this_layer = later_layer.weights.shape.1;
+			assert_eq!(neurons_len_of_this_layer, neurons_len_of_this_layer);
+			assert_eq!(z.shape.0, neurons_len_of_this_layer);
+			assert_eq!(sp.shape.0, neurons_len_of_this_layer);
+
+			delta = later_layer.weights.transpose_dot(&delta) * sp;
+			assert_eq!(delta.shape.0, neurons_len_of_this_layer);
+
+			reversed_nabla.push(Layer {
+				weights: delta.dot_transpose(&activations[activations.len() - l - 1]),
+				biases: delta.clone(),
+			});
+		}
+
+		reversed_nabla.reverse();
+		reversed_nabla
+	}
+
+	/// Return the number of test inputs for which the neural
+	/// network outputs the correct result. Note that the neural
+	/// network's output is assumed to be the index of whichever
+	/// neuron in the final layer has the highest activation.
 	fn evaluate(&self, test_data: &[(Vec<f64>, i32)]) -> usize {
 		test_data.iter()
 			.map(|(x, y)| {

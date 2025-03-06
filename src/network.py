@@ -41,7 +41,6 @@ class Network(object):
         """Return the output of the network if ``a`` is input."""
         for b, w in zip(self.biases, self.weights):
             a1 = sigmoid(np.dot(w, a)+b)
-            # print("{0} dot {1} -> {2}".format(w.shape, a.shape, a1.shape))
             a = a1
         return a
 
@@ -110,7 +109,6 @@ class Network(object):
             sigmoid_prime(zs[-1])
         nabla_b[-1] = delta
         nabla_w[-1] = np.dot(delta, activations[-2].transpose())
-        # print("nabla_w[{0}] shape: {1}".format(len(nabla_w) - 1, nabla_w[-1].shape))
         # Note that the variable l in the loop below is used a little
         # differently to the notation in Chapter 2 of the book.  Here,
         # l = 1 means the last layer of neurons, l = 2 is the
@@ -121,12 +119,8 @@ class Network(object):
             z = zs[-l]
             sp = sigmoid_prime(z)
             delta = np.dot(self.weights[-l+1].transpose(), delta) * sp
-            #print("delta shape: {0}".format(delta.shape))
             nabla_b[-l] = delta
             nabla_w[-l] = np.dot(delta, activations[-l-1].transpose())
-            # print("{0} dot {1} -> {2}".format(delta.shape, activations[-l-1].transpose().shape, nabla_w[-l].shape))
-            # print("activations[{0}] shape: {1}".format(-l-1, activations[-l-1].shape))
-            # print("nabla_w[{0}] shape: {1}".format(-l, nabla_w[-l].shape))
         return (nabla_b, nabla_w)
 
     def evaluate(self, test_data):
