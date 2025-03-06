@@ -114,7 +114,7 @@ fn pack_vector_data(data: &[Vec<f64>], label: &Vec<u8>) -> Vec<(Vec<f64>, i32)>{
 
 // Creates a 1d vector with size 10 (0..9) which contains a 1 a the 
 // index-location of the input @num
-fn vectorise_num(num: &u8) -> Vec<f64> {
+pub fn vectorise_num(num: &u8) -> Vec<f64> {
 	let mut out = vec![0.; 10];
 	out[*num as usize] = 1.;
 	out

@@ -1,134 +1,8 @@
-use std::{fmt::{self, Display, Formatter}, iter::FromIterator, ops::{AddAssign, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign}};
-
 use make_it_braille::BrailleImg;
 use rand::Rng;
 use rand_distr::StandardNormal;
 
-#[derive(Debug, Clone)]
-pub struct Vector1D(Vec<f64>);
-impl Vector1D {
-	pub fn zero(size: usize) -> Self {
-		Self(vec![0.0; size])
-	}
-
-	pub fn dot(&self, other: &Vector1D) -> f64 {
-		assert_eq!(self.len(), other.len());
-		self.iter().zip(other.iter())
-			.map(|(a, b)| a * b)
-			.sum()
-	}
-
-	pub fn iter(&self) -> std::slice::Iter<f64> {
-		self.0.iter()
-	}
-
-	pub fn iter_mut(&mut self) -> std::slice::IterMut<f64> {
-		self.0.iter_mut()
-	}
-
-	pub fn len(&self) -> usize {
-		self.0.len()
-	}
-
-	pub fn copy_from_slice(&mut self, slice: &[f64]) {
-		self.0.copy_from_slice(slice);
-	}
-
-	pub fn fill(&mut self, val: f64) {
-		self.0.fill(val);
-	}
-
-	pub fn find_max(&self) -> (f64, usize) {
-		self.iter().enumerate()
-			.fold((0.0, 0), |(max_val, max_idx), (idx, &val)| {
-				if val > max_val {
-					(val, idx)
-				} else {
-					(max_val, max_idx)
-				}
-			})
-	}
-}
-impl From<Vec<f64>> for Vector1D {
-	fn from(vec: Vec<f64>) -> Self {
-		Self(vec)
-	}
-}
-impl Index<usize> for Vector1D {
-	type Output = f64;
-
-	fn index(&self, index: usize) -> &Self::Output {
-		&self.0[index]
-	}
-}
-impl IndexMut<usize> for Vector1D {
-	fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-		&mut self.0[index]
-	}
-}
-impl AddAssign<&Vector1D> for Vector1D {
-	fn add_assign(&mut self, rhs: &Vector1D) {
-		assert_eq!(self.len(), rhs.len());
-		self.iter_mut().zip(rhs.iter()).for_each(|(a, b)| *a += b);
-	}
-}
-impl SubAssign<&Vector1D> for Vector1D {
-	fn sub_assign(&mut self, rhs: &Vector1D) {
-		assert_eq!(self.len(), rhs.len());
-		self.iter_mut().zip(rhs.iter()).for_each(|(a, b)| *a -= b);
-	}
-}
-impl Sub<&Vector1D> for Vector1D {
-	type Output = Self;
-
-	fn sub(mut self, rhs: &Vector1D) -> Self::Output {
-		assert_eq!(self.len(), rhs.len());
-		self.sub_assign(rhs);
-		self
-	}
-}
-impl DivAssign<f64> for Vector1D {
-	fn div_assign(&mut self, rhs: f64) {
-		self.iter_mut().for_each(|x| *x /= rhs);
-	}
-}
-impl MulAssign<f64> for Vector1D {
-	fn mul_assign(&mut self, rhs: f64) {
-		self.iter_mut().for_each(|x| *x *= rhs);
-	}
-}
-impl Mul<f64> for Vector1D {
-	type Output = Self;
-
-	fn mul(mut self, rhs: f64) -> Self::Output {
-		self.mul_assign(rhs);
-		self
-	}
-}
-impl MulAssign<&Vector1D> for Vector1D {
-	fn mul_assign(&mut self, rhs: &Vector1D) {
-		assert_eq!(self.len(), rhs.len());
-		self.iter_mut().zip(rhs.iter()).for_each(|(a, b)| *a *= b);
-	}
-}
-impl Mul<&Vector1D> for Vector1D {
-	type Output = Vector1D;
-
-	fn mul(mut self, rhs: &Vector1D) -> Self::Output {
-		self.mul_assign(rhs);
-		self
-	}
-}
-impl Display for Vector1D {
-	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-		write!(f, "Vector1D(len={})", self.len())
-	}
-}
-impl FromIterator<f64> for Vector1D {
-	fn from_iter<I: IntoIterator<Item = f64>>(iter: I) -> Self {
-		Self(Vec::from_iter(iter))
-	}
-}
+use crate::matrix::Matrix;
 
 const IMAGE_WIDTH: usize = 28;
 
@@ -177,25 +51,72 @@ fn draw_image(img: &mut BrailleImg, pixels: &[f64], x: u32, y: u32) {
 	});
 }
 
-#[derive(Clone, Copy)]
-pub struct WeightsInitializer {
-	pub f: fn(weights_len: usize) -> Vector1D,
+pub struct VecInitializer {
+	_f: fn(size: usize) -> Vec<f64>,
 }
-impl WeightsInitializer {
-	pub const DEFAULT: WeightsInitializer = WeightsInitializer {
-		f: |weights_len| {
+impl VecInitializer {
+	pub const STANDARD_NORMAL_SQRT: VecInitializer = VecInitializer {
+		_f: |weights_len| {
 			let mut rng = rand::rng();
 			let random = |_| rng.sample::<f64,_>(StandardNormal) / (weights_len as f64).sqrt();
 			(0..weights_len).map(random).collect()
 		},
 	};
-	pub const LARGE: WeightsInitializer = WeightsInitializer {
-		f: |weights_len| {
+	pub const STANDARD_NORMAL: VecInitializer = VecInitializer {
+		_f: |weights_len| {
 			let mut rng = rand::rng();
 			let random = |_| rng.sample::<f64,_>(StandardNormal);
 			(0..weights_len).map(random).collect()
 		},
 	};
+
+	#[inline]
+	pub fn f(&self, weights_len: usize) -> Vec<f64> {
+		(self._f)(weights_len)
+	}
+}
+
+
+#[derive(Clone, Copy)]
+pub struct WeightInitializer {
+	_f: fn(weights_len: usize) -> Vec<f64>,
+}
+impl WeightInitializer {
+	/// Initialize each weight using a Gaussian distribution with mean 0
+	/// and standard deviation 1 over the square root of the number of
+	/// weights connecting to the same neuron.  Initialize the biases
+	/// using a Gaussian distribution with mean 0 and standard
+	/// deviation 1.
+	///
+	/// Note that the first layer is assumed to be an input layer, and
+	/// by convention we won't set any biases for those neurons, since
+	/// biases are only ever used in computing the outputs from later
+	/// layers.
+	pub const DEFAULT: WeightInitializer = WeightInitializer {
+		_f: VecInitializer::STANDARD_NORMAL_SQRT._f,
+	};
+
+	/// Initialize the weights using a Gaussian distribution with mean 0
+	/// and standard deviation 1.  Initialize the biases using a
+	/// Gaussian distribution with mean 0 and standard deviation 1.
+	///
+	/// Note that the first layer is assumed to be an input layer, and
+	/// by convention we won't set any biases for those neurons, since
+	/// biases are only ever used in computing the outputs from later
+	/// layers.
+	///
+	/// This weight and bias initializer uses the same approach as in
+	/// Chapter 1, and is included for purposes of comparison.  It
+	/// will usually be better to use the default weight initializer
+	/// instead.
+	pub const LARGE: WeightInitializer = WeightInitializer {
+		_f: VecInitializer::STANDARD_NORMAL._f,
+	};
+
+	#[inline]
+	pub fn f(&self, weights_len: usize) -> Vec<f64> {
+		(self._f)(weights_len)
+	}
 }
 
 pub fn sigmoid(o: f64) -> f64 {
@@ -208,38 +129,50 @@ pub fn sigmoid_prime(o: f64) -> f64 {
 
 #[derive(Clone, Copy)]
 pub struct ActivationFunction {
-	pub f: fn(z: f64) -> f64,
-	pub prime: fn(z: f64) -> f64,
+	pub _f: fn(z: f64) -> f64,
+	pub _prime: fn(z: f64) -> f64,
 }
 impl ActivationFunction {
+	#[allow(dead_code)]
 	pub const SIGMOID: ActivationFunction = ActivationFunction {
-		f: sigmoid,
-		prime: sigmoid_prime,
+		_f: sigmoid,
+		_prime: sigmoid_prime,
 	};
+	#[allow(dead_code)]
 	pub const NOOP: ActivationFunction = ActivationFunction {
-		f: |z| z,
-		prime: |_| 1.0,
+		_f: |z| z,
+		_prime: |_| 1.0,
 	};
+	#[inline]
+	pub fn f(&self, z: f64) -> f64 {
+		(self._f)(z)
+	}
+	#[inline]
+	pub fn prime(&self, z: f64) -> f64 {
+		(self._prime)(z)
+	}
 }
 
 #[derive(Clone, Copy)]
 pub struct CostFunction {
-	pub f: fn(a: &Vector1D, y: &Vector1D) -> f64,
-	pub derivative: fn(a: &Vector1D, y: &Vector1D) -> Vector1D,
+	pub _f: fn(a: &Matrix, y: &Matrix) -> f64,
+	pub _delta: fn(z: &Matrix, a: &Matrix, y: &Matrix) -> Matrix,
 }
 impl CostFunction {
+	#[allow(dead_code)]
 	pub const QUADRATIC: CostFunction = CostFunction {
-		f: |a, y| {
-			assert_eq!(a.len(), y.len());
-			0.5 * a.iter().zip(y.iter())
-				.map(|(a, y)| (a - y).powi(2))
+		_f: |a, y| {
+			assert_eq!(a.shape, y.shape);
+			Matrix::update(a.clone() - y, |x| x.powi(2))
+				.iter()
 				.sum::<f64>()
 		},
-		derivative: |a, y| a.clone() - y,
+		_delta: |z, a, y| (a.clone() - y) * Matrix::update(z.clone(), sigmoid_prime),
 	};
+	#[allow(dead_code)]
 	pub const CROSS_ENTROPY: CostFunction = CostFunction {
-		f: |a, y| {
-			assert_eq!(a.len(), y.len());
+		_f: |a, y| {
+			assert_eq!(a.shape, y.shape);
 			a.iter().zip(y.iter())
 				.map(|(a, y)| {
 					if a - y == 0.0 {
@@ -250,21 +183,14 @@ impl CostFunction {
 				})
 				.sum::<f64>()
 		},
-		derivative: |a, y| {
-			assert_eq!(a.len(), y.len());
-			a.iter().zip(y.iter())
-				.map(|(&a, &y)| {
-					if a == 1.0 {
-						- y / a
-					} else if a == 0.0 {
-						(1.0 - y) / (1.0 - a)
-					} else {
-						- y / a + (1.0 - y) / (1.0 - a)
-					}
-				})
-				.collect()
-		}
+		_delta: |_z, a, y| a.clone() - y,
 	};
+	pub fn f(&self, a: &Matrix, y: &Matrix) -> f64 {
+		(self._f)(a, y)
+	}
+	pub fn delta(&self, z: &Matrix, a: &Matrix, y: &Matrix) -> Matrix {
+		(self._delta)(z, a, y)
+	}
 }
 
 #[derive(Default)]

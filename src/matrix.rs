@@ -19,11 +19,17 @@ impl Matrix {
 	pub fn zero(shape: (usize, usize)) -> Self {
 		Self::new(shape, vec![0.0; shape.0 * shape.1])
 	}
+	pub fn get(&self, row: usize, col: usize) -> f64 {
+		self.data[row * self.shape.1 + col]
+	}
 	pub fn row(&self, row: usize) -> MatrixVectorView<'_> {
 		MatrixVectorView::new_for_row(self, row)
 	}
 	pub fn column(&self, col: usize) -> MatrixVectorView<'_> {
 		MatrixVectorView::new_for_column(self, col)
+	}
+	pub fn iter(&self) -> impl Iterator<Item = &f64> {
+		self.data.iter()
 	}
 	pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f64> {
 		self.data.iter_mut()
@@ -66,6 +72,7 @@ impl Matrix {
 		}
 		Matrix::new((rows, cols), data)
 	}
+	#[allow(dead_code)]
 	pub fn transpose(&self) -> Matrix {
 		let (cols, rows) = self.shape;
 		let mut data = vec![0.0; cols * rows];
@@ -76,13 +83,6 @@ impl Matrix {
 			}
 		}
 		Matrix::new((rows, cols), data)
-	}
-	pub fn get(&self, row: usize, col: usize) -> f64 {
-		self.data[row * self.shape.1 + col]
-	}
-	pub fn copy_from_slice(&mut self, slice: &[f64]) {
-		assert_eq!(self.data.len(), slice.len());
-		self.data.copy_from_slice(slice);
 	}
 }
 impl From<Vec<f64>> for Matrix {
@@ -153,6 +153,11 @@ impl MulAssign<&Matrix> for Matrix {
 			.for_each(|(a, b)| *a *= b);
 	}
 }
+impl MulAssign<f64> for Matrix {
+	fn mul_assign(&mut self, scalar: f64) {
+		self.iter_mut().for_each(|x| *x *= scalar);
+	}
+}
 impl Mul<&Matrix> for Matrix {
 	type Output = Matrix;
 
@@ -172,7 +177,7 @@ impl Mul<f64> for Matrix {
 	type Output = Matrix;
 
 	fn mul(mut self, scalar: f64) -> Self::Output {
-		self.iter_mut().for_each(|x| *x *= scalar);
+		self.mul_assign(scalar);
 		self
 	}
 }
