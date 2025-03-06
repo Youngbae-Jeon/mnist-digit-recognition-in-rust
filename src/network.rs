@@ -1,3 +1,4 @@
+// ported from network.py
 use chrono::Local;
 use rand::{seq::SliceRandom, Rng};
 use rand_distr::StandardNormal;
@@ -17,15 +18,15 @@ impl Layer {
 }
 
 pub struct Network {
-	sizes: Vec<usize>,
+	shape: Vec<usize>,
 	layers: Vec<Layer>,
 }
 
 impl Network {
-	pub fn new (sizes: &[usize]) -> Self {
+	pub fn new (shape: &[usize]) -> Self {
 		Self {
-			sizes: sizes.to_vec(),
-			layers: sizes.windows(2)
+			shape: shape.to_vec(),
+			layers: shape.windows(2)
 				.map(|w| {
 					let weights_len = w[0];
 					let neurons_len = w[1];
@@ -90,7 +91,7 @@ impl Network {
 			biases: delta.clone(),
 		});
 
-		for l in 2..(self.layers.len() + 1) {
+		for l in 2..(self.shape.len()) {
 			let z = &zs[zs.len() - l];
 			let sp = Matrix::update(z.clone(), sigmoid_prime);
 
@@ -156,7 +157,8 @@ impl Network {
 		test_data: &[(Vec<f64>, i32)],
 	) {
 		let score = self.evaluate(test_data);
-		println!("Epoch 0: {}/{}", score, test_data.len());
+		let accuracy = score as f64 / test_data.len() as f64;
+		println!("Epoch.0: {:.2}% successful / {} tests (Before learning)", accuracy * 100.0, test_data.len());
 
 		let mut rng = rand::rng();
 		for epoch in 0..options.epochs {
@@ -169,8 +171,14 @@ impl Network {
 			}
 
 			let score = self.evaluate(test_data);
+			let accuracy = score as f64 / test_data.len() as f64;
 			let elapsed = (Local::now() - t).num_milliseconds() as f64 / 1000.0;
-			println!("Epoch {}: {}/{} {:.1}s elapsed", epoch + 1, score, test_data.len(), elapsed);
+			println!("Epoch.{}: {:.2}% successful / {} tests ({:.1}s elapsed)", epoch + 1, accuracy * 100.0, test_data.len(), elapsed);
+
+			if options.success_percentage > 0.0 && accuracy > options.success_percentage {
+				println!("Success percentage reached.");
+				break;
+			}
 		}
 	}
 

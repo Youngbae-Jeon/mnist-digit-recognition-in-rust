@@ -267,6 +267,7 @@ impl CostFunction {
 	};
 }
 
+#[derive(Default)]
 pub struct TrainingOptions {
 	pub epochs: usize,
 	pub success_percentage: f64,

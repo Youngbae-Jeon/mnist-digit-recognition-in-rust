@@ -206,6 +206,7 @@ impl MatrixVectorView<'_> {
 			len: mat.shape.0,
 		}
 	}
+	#[inline]
 	pub fn len(&self) -> usize {
 		self.len
 	}
@@ -229,10 +230,8 @@ impl MatrixVectorView<'_> {
 impl Index<usize> for MatrixVectorView<'_> {
 	type Output = f64;
 
+	#[inline]
 	fn index(&self, index: usize) -> &Self::Output {
-		if index >= self.len {
-			panic!("index out of bounds");
-		}
 		&self.data[self.offset + index * self.step]
 	}
 }
