@@ -25,9 +25,17 @@ impl Layer {
 	}
 }
 
+#[derive(Default)]
+pub struct NetworkOptions {
+	pub shape: Vec<usize>,
+	pub weights_initializer: WeightInitializer,
+	pub cost: CostFunction,
+}
+
 pub struct Network {
 	shape: Vec<usize>,
 	layers: Vec<Layer>,
+	cost_fn: CostFunction,
 }
 
 impl Network {
@@ -41,21 +49,22 @@ impl Network {
 	/// The biases for the network are initialized randomly, using
 	/// a Gaussian distribution with mean 0, and variance 1.
 	/// (aka. Standard Normal Distribution)
-	pub fn new (shape: &[usize]) -> Self {
+	pub fn new (options: &NetworkOptions) -> Self {
 		Self {
-			shape: shape.to_vec(),
-			layers: shape.windows(2)
+			shape: options.shape.to_vec(),
+			layers: options.shape.windows(2)
 				.map(|w| {
 					let weights_len = w[0];
 					let neurons_len = w[1];
-					let weights_data = WeightInitializer::DEFAULT.f(weights_len * neurons_len);
+					let weights_data = options.weights_initializer.f(weights_len * neurons_len);
 					let biases_data: Vec<f64> = VecInitializer::STANDARD_NORMAL.f(neurons_len);
 					Layer {
 						weights: Matrix::new((neurons_len, weights_len), weights_data),
 						biases: Matrix::new((neurons_len, 1), biases_data),
 					}
 				})
-				.collect()
+				.collect(),
+			cost_fn: options.cost,
 		}
 	}
 
@@ -87,6 +96,10 @@ impl Network {
 		training_data: &[Vec<Vec<f64>>],
 		evaluation_data: &[(Vec<f64>, i32)],
 	) {
+		if options.lambda < 0.0 {
+			println!("Lambda must be non-negative. Negative lambda will be ignored.");
+		}
+
 		// change data format to tuples of (Matrix, Matrix) representing (x, y)
 		let mut training_data: Vec<(Matrix, Matrix)> = training_data.iter()
 			.map(|arr| {
@@ -107,7 +120,7 @@ impl Network {
 			})
 			.collect();
 
-		println!("Traning with {} data...", training_data.len());
+		println!("Training with {} data...", training_data.len());
 		let (score, cost) = self.evaluate(&evaluation_data, options.lambda);
 		let accuracy = score as f64 / evaluation_data.len() as f64;
 		println!(" Epoch |  Train   | Train  |   Test   |  Test  | Elapsed ");
@@ -173,9 +186,11 @@ impl Network {
 		let n = n as f64;
 		self.layers.iter_mut().zip(nabla)
 			.for_each(|(layer, nabla)| {
-				layer.weights *= 1.0 - eta * (lambda / n); // L2 regularization
-				layer.weights -= nabla.weights * (eta / m);
-				layer.biases -= nabla.biases * (eta / m);
+				if lambda > 0.0 {
+					layer.weights *= 1.0 - eta * (lambda/n); // L2 regularization
+				}
+				layer.weights -= nabla.weights * (eta/m);
+				layer.biases -= nabla.biases * (eta/m);
 			});
 	}
 
@@ -206,7 +221,6 @@ impl Network {
 		//let mut delta = cost_derivative * sp;
 		let mut delta = self.delta(zs.last().unwrap(), &activations.last().unwrap(), y);
 		reversed_nabla.push(Layer {
-			//weights: delta.dot(&activations[activations.len() - 2].transpose()),
 			weights: delta.dot_transpose(&activations[activations.len() - 2]),
 			biases: delta.clone(),
 		});
@@ -242,33 +256,30 @@ impl Network {
 		reversed_nabla
 	}
 
-	/// Return the number of test inputs for which the neural
-	/// network outputs the correct result. Note that the neural
-	/// network's output is assumed to be the index of whichever
-	/// neuron in the final layer has the highest activation.
+	/// Returns a tuple `(score, cost)`
+	/// where `score` is the number of correct answers which the network predicts
+	/// and `cost` is the result of the cost function.
 	fn evaluate(&self, test_data: &[(Matrix, Matrix)], lambda: f64) -> (usize, f64) {
 		let n = test_data.len() as f64;
-		let (correct, mut cost) = test_data.iter()
+		let (score, mut cost) = test_data.iter()
 			.fold((0, 0.0), |(mut correct, mut cost), (x, y)| {
-				//let x = Matrix::from(test_data[0].clone());
-				//let y = Matrix::from(test_data[1].clone());
-				assert_eq!(x.shape, (784, 1));
-				assert_eq!(y.shape, (10, 1));
 				let a = self.feedforward(x);
 				cost += self.cost(&a, &y) / n;
 
-				let yhat = a.column(0).argmax();
-				let y = y.column(0).argmax();
-				if yhat == y as usize {
+				let predict = a.column(0).argmax();
+				let answer = y.column(0).argmax();
+				if predict == answer as usize {
 					correct += 1;
 				}
 				
 				(correct, cost)
 			});
-		cost += 0.5 * (lambda/n) * self.layers.iter()
-			.map(|layer| norm(&layer.weights).powi(2))
-			.sum::<f64>();
-		(correct, cost)
+		if lambda > 0.0 {
+			cost += 0.5 * (lambda/n) * self.layers.iter()
+				.map(|layer| layer.weights.norm().powi(2))
+				.sum::<f64>();
+		}
+		(score, cost)
 	}
 
 	fn activation(&self, z: Matrix) -> Matrix {
@@ -280,14 +291,10 @@ impl Network {
 	}
 
 	fn cost(&self, a: &Matrix, y: &Matrix) -> f64 {
-		CostFunction::CROSS_ENTROPY.f(a, y)
+		self.cost_fn.f(a, y)
 	}
 
 	fn delta(&self, z: &Matrix, a: &Matrix, y: &Matrix) -> Matrix {
-		CostFunction::CROSS_ENTROPY.delta(z, a, y)
+		self.cost_fn.delta(z, a, y)
 	}
-}
-
-fn norm(x: &Matrix) -> f64 {
-	x.iter().map(|x| x.powi(2)).sum::<f64>().sqrt()
 }

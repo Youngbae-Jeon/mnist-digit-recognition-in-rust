@@ -84,6 +84,9 @@ impl Matrix {
 		}
 		Matrix::new((rows, cols), data)
 	}
+	pub fn norm(&self) -> f64 {
+		self.iter().map(|x| x.powi(2)).sum::<f64>().sqrt()
+	}
 }
 impl From<Vec<f64>> for Matrix {
 	fn from(data: Vec<f64>) -> Self {

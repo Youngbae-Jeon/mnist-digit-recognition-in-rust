@@ -118,6 +118,11 @@ impl WeightInitializer {
 		(self._f)(weights_len)
 	}
 }
+impl Default for WeightInitializer {
+	fn default() -> Self {
+		Self::DEFAULT
+	}
+}
 
 pub fn sigmoid(o: f64) -> f64 {
 	1.0 / (1.0 + (-o).exp())
@@ -167,7 +172,19 @@ impl CostFunction {
 				.iter()
 				.sum::<f64>()
 		},
-		_delta: |z, a, y| (a.clone() - y) * Matrix::update(z.clone(), sigmoid_prime),
+		_delta: |z, a, y| {
+			assert_eq!(z.shape, a.shape);
+			assert_eq!(a.shape, y.shape);
+			assert_eq!(a.shape.1, 1);
+			let mut delta = vec![0.0; a.shape.0];
+			let a = a.column(0);
+			let y = y.column(0);
+			let z = z.column(0);
+			for i in 0..a.len() {
+				delta[i] = (a[i] - y[i]) * sigmoid_prime(z[i]);
+			}
+			Matrix::from(delta)
+		}
 	};
 	#[allow(dead_code)]
 	pub const CROSS_ENTROPY: CostFunction = CostFunction {
@@ -190,6 +207,11 @@ impl CostFunction {
 	}
 	pub fn delta(&self, z: &Matrix, a: &Matrix, y: &Matrix) -> Matrix {
 		(self._delta)(z, a, y)
+	}
+}
+impl Default for CostFunction {
+	fn default() -> Self {
+		Self::CROSS_ENTROPY
 	}
 }
 
