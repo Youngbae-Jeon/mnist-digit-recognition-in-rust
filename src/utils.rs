@@ -2,8 +2,6 @@ use make_it_braille::BrailleImg;
 use rand::Rng;
 use rand_distr::StandardNormal;
 
-use crate::matrix::Matrix;
-
 const IMAGE_WIDTH: usize = 28;
 
 type WrongAnswer<'a> = (&'a Vec<f64>, i32, i32);
@@ -158,6 +156,8 @@ impl ActivationFunction {
 	}
 }
 
+type Matrix = ndarray::Array2<f64>;
+
 #[derive(Clone, Copy)]
 pub struct CostFunction {
 	pub _f: fn(a: &Matrix, y: &Matrix) -> f64,
@@ -167,29 +167,33 @@ impl CostFunction {
 	#[allow(dead_code)]
 	pub const QUADRATIC: CostFunction = CostFunction {
 		_f: |a, y| {
-			assert_eq!(a.shape, y.shape);
-			Matrix::update(a.clone() - y, |x| x.powi(2))
-				.iter()
+			assert_eq!(a.nrows(), y.nrows());
+			assert_eq!(a.ncols(), y.ncols());
+			a.iter().zip(y.iter())
+				.map(|(a, y)| (a - y).powi(2))
 				.sum::<f64>()
 		},
 		_delta: |z, a, y| {
-			assert_eq!(z.shape, a.shape);
-			assert_eq!(a.shape, y.shape);
-			assert_eq!(a.shape.1, 1);
-			let mut delta = vec![0.0; a.shape.0];
+			assert_eq!(z.nrows(), a.nrows());
+			assert_eq!(z.ncols(), a.ncols());
+			assert_eq!(a.nrows(), y.nrows());
+			assert_eq!(a.ncols(), y.ncols());
+			assert_eq!(a.ncols(), 1);
+			let mut delta = vec![0.0; a.nrows()];
 			let a = a.column(0);
 			let y = y.column(0);
 			let z = z.column(0);
 			for i in 0..a.len() {
 				delta[i] = (a[i] - y[i]) * sigmoid_prime(z[i]);
 			}
-			Matrix::from(delta)
+			Matrix::from_shape_vec((delta.len(), 1), delta).unwrap()
 		}
 	};
 	#[allow(dead_code)]
 	pub const CROSS_ENTROPY: CostFunction = CostFunction {
 		_f: |a, y| {
-			assert_eq!(a.shape, y.shape);
+			assert_eq!(a.nrows(), y.nrows());
+			assert_eq!(a.ncols(), y.ncols());
 			a.iter().zip(y.iter())
 				.map(|(a, y)| {
 					if a - y == 0.0 {
@@ -214,6 +218,7 @@ impl Default for CostFunction {
 		Self::CROSS_ENTROPY
 	}
 }
+
 
 #[derive(Default)]
 pub struct TrainingOptions {

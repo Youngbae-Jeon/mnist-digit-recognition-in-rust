@@ -4,6 +4,9 @@ mod matrix;
 mod utils;
 mod io;
 
+#[cfg(feature = "blas")]
+extern crate blas_src;
+
 use io::TrainData;
 use utils::TrainingOptions;
 

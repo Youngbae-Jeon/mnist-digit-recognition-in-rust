@@ -9,9 +9,15 @@
 // features.
 
 use chrono::Local;
+use ndarray::ArrayView1;
 use rand::seq::SliceRandom;
 
-use crate::{io::vectorise_num, matrix::Matrix, utils::{ActivationFunction, CostFunction, TrainingOptions, VecInitializer, WeightInitializer}};
+use crate::{io::vectorise_num, utils::{ActivationFunction, CostFunction, TrainingOptions, VecInitializer, WeightInitializer}};
+
+// network2.rs uses `ndarray::Array2` as Matrix instead of inhouse `matrix::Matrix`.
+// `ndarray` uses cpu features like AVX or SSE2 or BLAS
+// and makes faster performance than the inhouse matrix implementation.
+type Matrix = ndarray::Array2<f64>;
 
 struct Layer {
 	/// matrix of shape (neurons_len, weights_len)
@@ -21,7 +27,7 @@ struct Layer {
 }
 impl Layer {
 	fn size(&self) -> usize {
-		self.biases.shape.0
+		self.biases.nrows()
 	}
 }
 
@@ -59,12 +65,12 @@ impl Network {
 					let weights_data = options.weights_initializer.f(weights_len * neurons_len);
 					let biases_data: Vec<f64> = VecInitializer::STANDARD_NORMAL.f(neurons_len);
 					Layer {
-						weights: Matrix::new((neurons_len, weights_len), weights_data),
-						biases: Matrix::new((neurons_len, 1), biases_data),
+						weights: Matrix::from_shape_vec((neurons_len, weights_len), weights_data).unwrap(),
+						biases: Matrix::from_shape_vec((neurons_len, 1), biases_data).unwrap(),
 					}
 				})
 				.collect(),
-			cost_fn: options.cost,
+			cost_fn: options.cost.clone(),
 		}
 	}
 
@@ -72,14 +78,15 @@ impl Network {
 	fn feedforward(&self, x: &Matrix) -> Matrix {
 		let a = self.layers.iter()
 			.fold(x.clone(), |x, layer| {
-				assert_eq!(x.shape.0, layer.weights.shape.1);
+				assert_eq!(x.nrows(), layer.weights.ncols());
 				let z = layer.weights.dot(&x) + &layer.biases;
 				let a = self.activation(z);
-				assert_eq!(a.shape.0, layer.size());
-				assert_eq!(a.shape.1, 1);
+				assert_eq!(a.nrows(), layer.size());
+				assert_eq!(a.ncols(), 1);
 				a
 			});
-		assert_eq!(a.shape, (10, 1));
+		assert_eq!(a.nrows(), 10);
+		assert_eq!(a.ncols(), 1);
 		a
 	}
 
@@ -106,16 +113,16 @@ impl Network {
 				assert_eq!(arr.len(), 2);
 				assert_eq!(arr[0].len(), 784);
 				assert_eq!(arr[1].len(), 10);
-				let x = Matrix::from(arr[0].clone());
-				let y = Matrix::from(arr[1].clone());
+				let x = Matrix::from_shape_vec((784, 1), arr[0].clone()).unwrap();
+				let y = Matrix::from_shape_vec((10, 1), arr[1].clone()).unwrap();
 				(x, y)
 			})
 			.collect();
 		let evaluation_data: Vec<(Matrix, Matrix)> = evaluation_data.iter()
 			.map(|(x, y)| {
 				assert_eq!(x.len(), 784);
-				let x = Matrix::from(x.to_vec());
-				let y = Matrix::from(vectorise_num(&(*y as u8)));
+				let x = Matrix::from_shape_vec((x.len(), 1), x.to_vec()).unwrap();
+				let y = Matrix::from_shape_vec((10, 1), vectorise_num(&(*y as u8))).unwrap();
 				(x, y)
 			})
 			.collect();
@@ -157,8 +164,8 @@ impl Network {
 	fn mini_batch_nabla(&self, mini_batch: &[(Matrix, Matrix)]) -> Vec<Layer> {
 		let mut nabla: Vec<Layer> = self.layers.iter()
 			.map(|layer| Layer {
-				weights: Matrix::zero(layer.weights.shape),
-				biases: Matrix::zero(layer.biases.shape),
+				weights: Matrix::zeros((layer.weights.nrows(), layer.weights.ncols())),
+				biases: Matrix::zeros((layer.biases.nrows(), layer.biases.ncols())),
 			})
 			.collect();
 		for (x, y) in mini_batch {
@@ -166,8 +173,8 @@ impl Network {
 			assert_eq!(delta_nabla.len(), nabla.len());
 			nabla.iter_mut().zip(delta_nabla.into_iter())
 				.for_each(|(n, dn)| {
-					n.weights += dn.weights;
-					n.biases += dn.biases;
+					n.weights += &dn.weights;
+					n.biases += &dn.biases;
 				});
 		}
 		nabla
@@ -185,16 +192,16 @@ impl Network {
 			.reduce(|| {
 				self.layers.iter()
 					.map(|layer| Layer {
-						weights: Matrix::zero(layer.weights.shape),
-						biases: Matrix::zero(layer.biases.shape),
+						weights: Matrix::zeros((layer.weights.nrows(), layer.weights.ncols())),
+						biases: Matrix::zeros((layer.biases.nrows(), layer.biases.ncols())),
 					})
 					.collect::<Vec<_>>()
 			}, |mut nabla, delta_nabla| {
 				assert_eq!(delta_nabla.len(), nabla.len());
 				nabla.iter_mut().zip(delta_nabla.into_iter())
 					.for_each(|(n, dn)| {
-						n.weights += dn.weights;
-						n.biases += dn.biases;
+						n.weights += &dn.weights;
+						n.biases += &dn.biases;
 					});
 				nabla
 			})
@@ -215,8 +222,8 @@ impl Network {
 				if lambda > 0.0 {
 					layer.weights *= 1.0 - eta * (lambda/n); // L2 regularization
 				}
-				layer.weights -= nabla.weights * (eta/m);
-				layer.biases -= nabla.biases * (eta/m);
+				layer.weights -= &(nabla.weights * (eta/m));
+				layer.biases -= &(nabla.biases * (eta/m));
 			});
 	}
 
@@ -247,7 +254,7 @@ impl Network {
 		//let mut delta = cost_derivative * sp;
 		let mut delta = self.delta(zs.last().unwrap(), &activations.last().unwrap(), y);
 		reversed_nabla.push(Layer {
-			weights: delta.dot_transpose(&activations[activations.len() - 2]),
+			weights: delta.dot(&activations[activations.len() - 2].t()),
 			biases: delta.clone(),
 		});
 
@@ -263,17 +270,17 @@ impl Network {
 
 			let later_layer = &self.layers[self.layers.len() - l + 1];
 
-			assert_eq!(delta.shape.0, later_layer.weights.shape.0);
-			let neurons_len_of_this_layer = later_layer.weights.shape.1;
+			assert_eq!(delta.nrows(), later_layer.weights.nrows());
+			let neurons_len_of_this_layer = later_layer.weights.ncols();
 			assert_eq!(neurons_len_of_this_layer, neurons_len_of_this_layer);
-			assert_eq!(z.shape.0, neurons_len_of_this_layer);
-			assert_eq!(sp.shape.0, neurons_len_of_this_layer);
+			assert_eq!(z.nrows(), neurons_len_of_this_layer);
+			assert_eq!(sp.nrows(), neurons_len_of_this_layer);
 
-			delta = later_layer.weights.transpose_dot(&delta) * sp;
-			assert_eq!(delta.shape.0, neurons_len_of_this_layer);
+			delta = later_layer.weights.t().dot(&delta) * sp;
+			assert_eq!(delta.nrows(), neurons_len_of_this_layer);
 
 			reversed_nabla.push(Layer {
-				weights: delta.dot_transpose(&activations[activations.len() - l - 1]),
+				weights: delta.dot(&activations[activations.len() - l - 1].t()),
 				biases: delta.clone(),
 			});
 		}
@@ -293,12 +300,11 @@ impl Network {
 				let a = self.feedforward(x);
 				cost += self.cost(&a, &y) / n;
 
-				let predict = a.column(0).argmax();
-				let answer = y.column(0).argmax();
+				let predict = argmax(&a.column(0));
+				let answer = argmax(&y.column(0));
 				if predict == answer as usize {
 					correct += 1;
 				}
-			
 				(correct, cost)
 			})
 	}
@@ -313,8 +319,8 @@ impl Network {
 				let a = self.feedforward(x);
 				let cost = self.cost(&a, &y) / n;
 
-				let predict = a.column(0).argmax();
-				let answer = y.column(0).argmax();
+				let predict = argmax(&a.column(0));
+				let answer = argmax(&y.column(0));
 				let correct: usize = if predict == answer as usize { 1 } else { 0 };
 				(correct, cost)
 			})
@@ -326,18 +332,20 @@ impl Network {
 		let n = test_data.len() as f64;
 		if lambda > 0.0 {
 			cost += 0.5 * (lambda/n) * self.layers.iter()
-				.map(|layer| layer.weights.norm().powi(2))
+				.map(|layer| norm(&layer.weights).powi(2))
 				.sum::<f64>();
 		}
 		(score, cost)
 	}
 
-	fn activation(&self, z: Matrix) -> Matrix {
-		Matrix::update(z, |z| ActivationFunction::SIGMOID.f(z))
+	fn activation(&self, mut z: Matrix) -> Matrix {
+		z.iter_mut().for_each(|z| *z = ActivationFunction::SIGMOID.f(*z));
+		z
 	}
 
-	fn activation_prime(&self, z: Matrix) -> Matrix {
-		Matrix::update(z, |z| ActivationFunction::SIGMOID.prime(z))
+	fn activation_prime(&self, mut z: Matrix) -> Matrix {
+		z.iter_mut().for_each(|z| *z = ActivationFunction::SIGMOID.prime(*z));
+		z
 	}
 
 	fn cost(&self, a: &Matrix, y: &Matrix) -> f64 {
@@ -347,4 +355,18 @@ impl Network {
 	fn delta(&self, z: &Matrix, a: &Matrix, y: &Matrix) -> Matrix {
 		self.cost_fn.delta(z, a, y)
 	}
+}
+
+fn argmax(a: &ArrayView1<f64>) -> usize {
+	a.iter().enumerate().fold((0, 0.0), |(i_max, v_max), (i, &v)| {
+		if v > v_max {
+			(i, v)
+		} else {
+			(i_max, v_max)
+		}
+	}).0
+}
+
+fn norm(mat: &Matrix) -> f64 {
+	mat.iter().map(|x| x.powi(2)).sum::<f64>().sqrt()
 }
