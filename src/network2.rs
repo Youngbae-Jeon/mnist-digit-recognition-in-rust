@@ -153,34 +153,60 @@ impl Network {
 		}
 	}
 
-	/// Update the network's weights and biases by applying gradient
-	/// descent using backpropagation to a single mini batch.  The
-	/// ``mini_batch`` is a list of tuples ``(x, y)``, ``eta`` is the
-	/// learning rate, ``lambda`` is the regularization parameter, and
-	/// ``n`` is the total size of the training data set.
-	pub fn update_mini_batch(&mut self, mini_batch: &[(Matrix, Matrix)], eta: f64, lambda: f64, n: usize) {
+	#[cfg(not(feature = "rayon"))]
+	fn mini_batch_nabla(&self, mini_batch: &[(Matrix, Matrix)]) -> Vec<Layer> {
 		let mut nabla: Vec<Layer> = self.layers.iter()
 			.map(|layer| Layer {
 				weights: Matrix::zero(layer.weights.shape),
 				biases: Matrix::zero(layer.biases.shape),
 			})
 			.collect();
-
 		for (x, y) in mini_batch {
-			//assert_eq!(mb.len(), 2);
-
-			//let x = Matrix::from(mb[0].to_vec());
-			//let y = Matrix::from(mb[1].to_vec());
-
 			let delta_nabla = self.backprop(x, y);
 			assert_eq!(delta_nabla.len(), nabla.len());
-
 			nabla.iter_mut().zip(delta_nabla.into_iter())
 				.for_each(|(n, dn)| {
 					n.weights += dn.weights;
 					n.biases += dn.biases;
 				});
 		}
+		nabla
+	}
+
+	#[cfg(feature = "rayon")]
+	fn mini_batch_nabla(&self, mini_batch: &[(Matrix, Matrix)]) -> Vec<Layer> {
+		use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
+		mini_batch.par_iter()
+			.map(|(x, y)| {
+				let delta_nabla = self.backprop(x, y);
+				delta_nabla
+			})
+			.reduce(|| {
+				self.layers.iter()
+					.map(|layer| Layer {
+						weights: Matrix::zero(layer.weights.shape),
+						biases: Matrix::zero(layer.biases.shape),
+					})
+					.collect::<Vec<_>>()
+			}, |mut nabla, delta_nabla| {
+				assert_eq!(delta_nabla.len(), nabla.len());
+				nabla.iter_mut().zip(delta_nabla.into_iter())
+					.for_each(|(n, dn)| {
+						n.weights += dn.weights;
+						n.biases += dn.biases;
+					});
+				nabla
+			})
+	}
+
+	/// Update the network's weights and biases by applying gradient
+	/// descent using backpropagation to a single mini batch.  The
+	/// ``mini_batch`` is a list of tuples ``(x, y)``, ``eta`` is the
+	/// learning rate, ``lambda`` is the regularization parameter, and
+	/// ``n`` is the total size of the training data set.
+	pub fn update_mini_batch(&mut self, mini_batch: &[(Matrix, Matrix)], eta: f64, lambda: f64, n: usize) {
+		let nabla = self.mini_batch_nabla(mini_batch);
 
 		let m = mini_batch.len() as f64;
 		let n = n as f64;
@@ -259,9 +285,10 @@ impl Network {
 	/// Returns a tuple `(score, cost)`
 	/// where `score` is the number of correct answers which the network predicts
 	/// and `cost` is the result of the cost function.
-	fn evaluate(&self, test_data: &[(Matrix, Matrix)], lambda: f64) -> (usize, f64) {
+	#[cfg(not(feature = "rayon"))]
+	fn evaluate_sum_score_cost(&self, test_data: &[(Matrix, Matrix)]) -> (usize, f64) {
 		let n = test_data.len() as f64;
-		let (score, mut cost) = test_data.iter()
+		test_data.iter()
 			.fold((0, 0.0), |(mut correct, mut cost), (x, y)| {
 				let a = self.feedforward(x);
 				cost += self.cost(&a, &y) / n;
@@ -271,9 +298,32 @@ impl Network {
 				if predict == answer as usize {
 					correct += 1;
 				}
-				
+			
 				(correct, cost)
-			});
+			})
+	}
+
+	#[cfg(feature = "rayon")]
+	fn evaluate_sum_score_cost(&self, test_data: &[(Matrix, Matrix)]) -> (usize, f64) {
+		use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
+		let n = test_data.len() as f64;
+		test_data.par_iter()
+			.map(|(x, y)| {
+				let a = self.feedforward(x);
+				let cost = self.cost(&a, &y) / n;
+
+				let predict = a.column(0).argmax();
+				let answer = y.column(0).argmax();
+				let correct: usize = if predict == answer as usize { 1 } else { 0 };
+				(correct, cost)
+			})
+			.reduce(|| (0_usize, 0.0), |sum, r| (sum.0 + r.0, sum.1 + r.1))
+	}
+
+	fn evaluate(&self, test_data: &[(Matrix, Matrix)], lambda: f64) -> (usize, f64) {
+		let (score, mut cost) = self.evaluate_sum_score_cost(test_data);
+		let n = test_data.len() as f64;
 		if lambda > 0.0 {
 			cost += 0.5 * (lambda/n) * self.layers.iter()
 				.map(|layer| layer.weights.norm().powi(2))
