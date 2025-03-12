@@ -152,14 +152,17 @@ impl Network {
 			let (validation_score, validation_cost) = self.evaluate(&validation_data, options.lambda);
 			let validation_accu = validation_score as f64 / validation_data.len() as f64;
 			let elapsed = (Local::now() - t).num_milliseconds() as f64 / 1000.0;
-			println!(" {:>5} | {:>7.2}% | {:>6.3} | {:>9.2}% | {:>10.3} | {:>6.1}s",
-				epoch+1, train_accu*100.0, train_cost, validation_accu*100.0, validation_cost, elapsed);
 
-			if validation_accu > best_accu {
+			let improved_flag = if validation_accu > best_accu {
 				best_layers = self.layers.clone();
 				best_accu = validation_accu;
 				best_epoch = epoch;
+				"^ "
+			} else {
+				""
 			};
+			println!(" {:>5} | {:>7.2}% | {:>6.3} | {:>9}% | {:>10.3} | {:>6.1}s",
+				epoch+1, train_accu*100.0, train_cost, format!("{}{:.2}", improved_flag, validation_accu*100.0), validation_cost, elapsed);
 		}
 
 		self.layers = best_layers;
@@ -174,7 +177,7 @@ impl Network {
 		let (test_score, test_cost) = self.evaluate(&test_data, options.lambda);
 		let test_accu = test_score as f64 / test_data.len() as f64;
 		println!("---------------------------|------------|------------|---------");
-		println!(" {:25} | {:>9.2}% | {:>10.3} | {:>7}", format!("Test by Best Epoch {}", best_epoch+1), test_accu * 100.0, test_cost, "");
+		println!(" {:>25} | {:>9.2}% | {:>10.3} | {:>7}", format!("Test by Best Epoch {}", best_epoch+1), test_accu * 100.0, test_cost, "");
 	}
 
 	#[cfg(not(feature = "rayon"))]
