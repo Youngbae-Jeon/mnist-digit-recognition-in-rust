@@ -47,11 +47,11 @@ impl Network {
 				.map(|w| {
 					let weights_len = w[0];
 					let neurons_len = w[1];
-					let weights_data: Vec<f64> = (0..(weights_len * neurons_len))
+					let weights_data: Vec<f32> = (0..(weights_len * neurons_len))
 						.map(|_| rand::rng().sample(StandardNormal))
 						// .map(|_| rng.random_range(-1.0..1.0))
 						.collect();
-					let biases_data: Vec<f64> = (0..neurons_len)
+					let biases_data: Vec<f32> = (0..neurons_len)
 						.map(|_| rand::rng().sample(StandardNormal))
 						// .map(|_| rng.random_range(-1.0..1.0))
 						.collect();
@@ -90,11 +90,11 @@ impl Network {
 	pub fn sgd(
 		&mut self,
 		options: &TrainingOptions,
-		training_data: &[Vec<Vec<f64>>],
-		test_data: &[(Vec<f64>, i32)],
+		training_data: &[Vec<Vec<f32>>],
+		test_data: &[(Vec<f32>, i32)],
 	) {
 		let score = self.evaluate(test_data);
-		let accuracy = score as f64 / test_data.len() as f64;
+		let accuracy = score as f32 / test_data.len() as f32;
 		println!("Epoch.0: {:.2}% successful / {} tests (Before learning)", accuracy * 100.0, test_data.len());
 
 		let mut rng = rand::rng();
@@ -108,8 +108,8 @@ impl Network {
 			}
 
 			let score = self.evaluate(test_data);
-			let accuracy = score as f64 / test_data.len() as f64;
-			let elapsed = (Local::now() - t).num_milliseconds() as f64 / 1000.0;
+			let accuracy = score as f32 / test_data.len() as f32;
+			let elapsed = (Local::now() - t).num_milliseconds() as f32 / 1000.0;
 			println!("Epoch.{}: {:.2}% successful / {} tests ({:.1}s elapsed)", epoch + 1, accuracy * 100.0, test_data.len(), elapsed);
 		}
 	}
@@ -118,7 +118,7 @@ impl Network {
 	/// gradient descent using backpropagation to a single mini batch.
 	/// The ``mini_batch`` is a list of tuples ``(x, y)``, and ``eta``
 	/// is the learning rate.
-	pub fn update_mini_batch(&mut self, mini_batch: &[Vec<Vec<f64>>], eta: f64) {
+	pub fn update_mini_batch(&mut self, mini_batch: &[Vec<Vec<f32>>], eta: f32) {
 		let mut nabla: Vec<Layer> = self.layers.iter()
 			.map(|layer| Layer {
 				weights: Matrix::zero(layer.weights.shape),
@@ -142,7 +142,7 @@ impl Network {
 				});
 		}
 
-		let m = mini_batch.len() as f64;
+		let m = mini_batch.len() as f32;
 		self.layers.iter_mut().zip(nabla)
 			.for_each(|(layer, n)| {
 				layer.weights -= n.weights * (eta / m);
@@ -216,7 +216,7 @@ impl Network {
 	/// network outputs the correct result. Note that the neural
 	/// network's output is assumed to be the index of whichever
 	/// neuron in the final layer has the highest activation.
-	fn evaluate(&self, test_data: &[(Vec<f64>, i32)]) -> usize {
+	fn evaluate(&self, test_data: &[(Vec<f32>, i32)]) -> usize {
 		test_data.iter()
 			.map(|(x, y)| {
 				let x = Matrix::from(x.clone());

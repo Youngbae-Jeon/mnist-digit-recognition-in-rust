@@ -17,7 +17,7 @@ use crate::{io::{vectorise_num, TrainData}, utils::{ActivationFunction, CostFunc
 // network2.rs uses `ndarray::Array2` as Matrix instead of inhouse `matrix::Matrix`.
 // `ndarray` uses cpu features like AVX or SSE2 or BLAS
 // and makes faster performance than the inhouse matrix implementation.
-type Matrix = ndarray::Array2<f64>;
+type Matrix = ndarray::Array2<f32>;
 
 #[derive(Clone)]
 struct Layer {
@@ -64,7 +64,7 @@ impl Network {
 					let weights_len = w[0];
 					let neurons_len = w[1];
 					let weights_data = options.weights_initializer.f(weights_len * neurons_len);
-					let biases_data: Vec<f64> = VecInitializer::STANDARD_NORMAL.f(neurons_len);
+					let biases_data = VecInitializer::STANDARD_NORMAL.f(neurons_len);
 					Layer {
 						weights: Matrix::from_shape_vec((neurons_len, weights_len), weights_data).unwrap(),
 						biases: Matrix::from_shape_vec((neurons_len, 1), biases_data).unwrap(),
@@ -127,7 +127,7 @@ impl Network {
 
 		println!("Training with {} data...", training_data.len());
 		let (score, cost) = self.evaluate(&validation_data, options.lambda);
-		let accuracy = score as f64 / validation_data.len() as f64;
+		let accuracy = score as f32 / validation_data.len() as f32;
 		println!(" Epoch |  Train   | Train  | Validation | Validation | Elapsed ");
 		println!("       | Accuracy |  Cost  |  Accuracy  |    Cost    |   Time  ");
 		println!("-------|----------|--------|------------|------------|---------");
@@ -147,11 +147,11 @@ impl Network {
 			}
 
 			let (train_score, train_cost) = self.evaluate(&training_data, options.lambda);
-			let train_accu = train_score as f64 / training_data.len() as f64;
+			let train_accu = train_score as f32 / training_data.len() as f32;
 
 			let (validation_score, validation_cost) = self.evaluate(&validation_data, options.lambda);
-			let validation_accu = validation_score as f64 / validation_data.len() as f64;
-			let elapsed = (Local::now() - t).num_milliseconds() as f64 / 1000.0;
+			let validation_accu = validation_score as f32 / validation_data.len() as f32;
+			let elapsed = (Local::now() - t).num_milliseconds() as f32 / 1000.0;
 
 			let improved_flag = if validation_accu > best_accu {
 				best_layers = self.layers.clone();
@@ -175,7 +175,7 @@ impl Network {
 			})
 			.collect();
 		let (test_score, test_cost) = self.evaluate(&test_data, options.lambda);
-		let test_accu = test_score as f64 / test_data.len() as f64;
+		let test_accu = test_score as f32 / test_data.len() as f32;
 		println!("---------------------------|------------|------------|---------");
 		println!(" {:>25} | {:>9.2}% | {:>10.3} | {:>7}", format!("Test by Best Epoch {}", best_epoch+1), test_accu * 100.0, test_cost, "");
 	}
@@ -232,11 +232,11 @@ impl Network {
 	/// ``mini_batch`` is a list of tuples ``(x, y)``, ``eta`` is the
 	/// learning rate, ``lambda`` is the regularization parameter, and
 	/// ``n`` is the total size of the training data set.
-	pub fn update_mini_batch(&mut self, mini_batch: &[(Matrix, Matrix)], eta: f64, lambda: f64, n: usize) {
+	pub fn update_mini_batch(&mut self, mini_batch: &[(Matrix, Matrix)], eta: f32, lambda: f32, n: usize) {
 		let nabla = self.mini_batch_nabla(mini_batch);
 
-		let m = mini_batch.len() as f64;
-		let n = n as f64;
+		let m = mini_batch.len() as f32;
+		let n = n as f32;
 		self.layers.iter_mut().zip(nabla)
 			.for_each(|(layer, nabla)| {
 				if lambda > 0.0 {
@@ -313,8 +313,8 @@ impl Network {
 	/// where `score` is the number of correct answers which the network predicts
 	/// and `cost` is the result of the cost function.
 	#[cfg(not(feature = "rayon"))]
-	fn evaluate_sum_score_cost(&self, test_data: &[(Matrix, Matrix)]) -> (usize, f64) {
-		let n = test_data.len() as f64;
+	fn evaluate_sum_score_cost(&self, test_data: &[(Matrix, Matrix)]) -> (usize, f32) {
+		let n = test_data.len() as f32;
 		test_data.iter()
 			.fold((0, 0.0), |(mut correct, mut cost), (x, y)| {
 				let a = self.feedforward(x);
@@ -330,10 +330,10 @@ impl Network {
 	}
 
 	#[cfg(feature = "rayon")]
-	fn evaluate_sum_score_cost(&self, test_data: &[(Matrix, Matrix)]) -> (usize, f64) {
+	fn evaluate_sum_score_cost(&self, test_data: &[(Matrix, Matrix)]) -> (usize, f32) {
 		use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-		let n = test_data.len() as f64;
+		let n = test_data.len() as f32;
 		test_data.par_iter()
 			.map(|(x, y)| {
 				let a = self.feedforward(x);
@@ -347,13 +347,13 @@ impl Network {
 			.reduce(|| (0_usize, 0.0), |sum, r| (sum.0 + r.0, sum.1 + r.1))
 	}
 
-	fn evaluate(&self, test_data: &[(Matrix, Matrix)], lambda: f64) -> (usize, f64) {
+	fn evaluate(&self, test_data: &[(Matrix, Matrix)], lambda: f32) -> (usize, f32) {
 		let (score, mut cost) = self.evaluate_sum_score_cost(test_data);
-		let n = test_data.len() as f64;
+		let n = test_data.len() as f32;
 		if lambda > 0.0 {
 			cost += 0.5 * (lambda/n) * self.layers.iter()
 				.map(|layer| norm(&layer.weights).powi(2))
-				.sum::<f64>();
+				.sum::<f32>();
 		}
 		(score, cost)
 	}
@@ -368,7 +368,7 @@ impl Network {
 		z
 	}
 
-	fn cost(&self, a: &Matrix, y: &Matrix) -> f64 {
+	fn cost(&self, a: &Matrix, y: &Matrix) -> f32 {
 		self.cost_fn.f(a, y)
 	}
 
@@ -377,7 +377,7 @@ impl Network {
 	}
 }
 
-fn argmax(a: &ArrayView1<f64>) -> usize {
+fn argmax(a: &ArrayView1<f32>) -> usize {
 	a.iter().enumerate().fold((0, 0.0), |(i_max, v_max), (i, &v)| {
 		if v > v_max {
 			(i, v)
@@ -387,6 +387,6 @@ fn argmax(a: &ArrayView1<f64>) -> usize {
 	}).0
 }
 
-fn norm(mat: &Matrix) -> f64 {
-	mat.iter().map(|x| x.powi(2)).sum::<f64>().sqrt()
+fn norm(mat: &Matrix) -> f32 {
+	mat.iter().map(|x| x.powi(2)).sum::<f32>().sqrt()
 }

@@ -4,7 +4,7 @@ use rand_distr::StandardNormal;
 
 const IMAGE_WIDTH: usize = 28;
 
-type WrongAnswer<'a> = (&'a Vec<f64>, i32, i32);
+type WrongAnswer<'a> = (&'a Vec<f32>, i32, i32);
 
 pub struct WrongAnswers<'a> {
 	answers: Vec<WrongAnswer<'a>>,
@@ -26,7 +26,7 @@ impl<'a> WrongAnswers<'a> {
 	}
 }
 
-fn dump_wrong_chunk(chunk: &[(&Vec<f64>, i32, i32)]) {
+fn dump_wrong_chunk(chunk: &[(&Vec<f32>, i32, i32)]) {
 	let mut img = BrailleImg::new(28 * chunk.len() as u32, 28);
 	let mut labels: String = String::new();
 	let mut guesses: String = String::new();
@@ -40,7 +40,7 @@ fn dump_wrong_chunk(chunk: &[(&Vec<f64>, i32, i32)]) {
 	println!("{}", guesses);
 }
 
-fn draw_image(img: &mut BrailleImg, pixels: &[f64], x: u32, y: u32) {
+fn draw_image(img: &mut BrailleImg, pixels: &[f32], x: u32, y: u32) {
 	pixels.chunks(28).enumerate().for_each(|(y1, rows)| {
 		rows.iter().enumerate().for_each(|(x1, val)| {
 			img.set_dot(x + x1 as u32, y + y1 as u32, *val > 0.5)
@@ -50,26 +50,26 @@ fn draw_image(img: &mut BrailleImg, pixels: &[f64], x: u32, y: u32) {
 }
 
 pub struct VecInitializer {
-	_f: fn(size: usize) -> Vec<f64>,
+	_f: fn(size: usize) -> Vec<f32>,
 }
 impl VecInitializer {
 	pub const STANDARD_NORMAL_SQRT: VecInitializer = VecInitializer {
 		_f: |weights_len| {
 			let mut rng = rand::rng();
-			let random = |_| rng.sample::<f64,_>(StandardNormal) / (weights_len as f64).sqrt();
+			let random = |_| rng.sample::<f32,_>(StandardNormal) / (weights_len as f32).sqrt();
 			(0..weights_len).map(random).collect()
 		},
 	};
 	pub const STANDARD_NORMAL: VecInitializer = VecInitializer {
 		_f: |weights_len| {
 			let mut rng = rand::rng();
-			let random = |_| rng.sample::<f64,_>(StandardNormal);
+			let random = |_| rng.sample::<f32,_>(StandardNormal);
 			(0..weights_len).map(random).collect()
 		},
 	};
 
 	#[inline]
-	pub fn f(&self, weights_len: usize) -> Vec<f64> {
+	pub fn f(&self, weights_len: usize) -> Vec<f32> {
 		(self._f)(weights_len)
 	}
 }
@@ -77,7 +77,7 @@ impl VecInitializer {
 
 #[derive(Clone, Copy)]
 pub struct WeightInitializer {
-	_f: fn(weights_len: usize) -> Vec<f64>,
+	_f: fn(weights_len: usize) -> Vec<f32>,
 }
 impl WeightInitializer {
 	/// Initialize each weight using a Gaussian distribution with mean 0
@@ -112,7 +112,7 @@ impl WeightInitializer {
 	};
 
 	#[inline]
-	pub fn f(&self, weights_len: usize) -> Vec<f64> {
+	pub fn f(&self, weights_len: usize) -> Vec<f32> {
 		(self._f)(weights_len)
 	}
 }
@@ -122,18 +122,18 @@ impl Default for WeightInitializer {
 	}
 }
 
-pub fn sigmoid(o: f64) -> f64 {
+pub fn sigmoid(o: f32) -> f32 {
 	1.0 / (1.0 + (-o).exp())
 }
 
-pub fn sigmoid_prime(o: f64) -> f64 {
+pub fn sigmoid_prime(o: f32) -> f32 {
 	sigmoid(o) * (1.0 - sigmoid(o))
 }
 
 #[derive(Clone, Copy)]
 pub struct ActivationFunction {
-	pub _f: fn(z: f64) -> f64,
-	pub _prime: fn(z: f64) -> f64,
+	pub _f: fn(z: f32) -> f32,
+	pub _prime: fn(z: f32) -> f32,
 }
 impl ActivationFunction {
 	#[allow(dead_code)]
@@ -147,20 +147,20 @@ impl ActivationFunction {
 		_prime: |_| 1.0,
 	};
 	#[inline]
-	pub fn f(&self, z: f64) -> f64 {
+	pub fn f(&self, z: f32) -> f32 {
 		(self._f)(z)
 	}
 	#[inline]
-	pub fn prime(&self, z: f64) -> f64 {
+	pub fn prime(&self, z: f32) -> f32 {
 		(self._prime)(z)
 	}
 }
 
-type Matrix = ndarray::Array2<f64>;
+type Matrix = ndarray::Array2<f32>;
 
 #[derive(Clone, Copy)]
 pub struct CostFunction {
-	pub _f: fn(a: &Matrix, y: &Matrix) -> f64,
+	pub _f: fn(a: &Matrix, y: &Matrix) -> f32,
 	pub _delta: fn(z: &Matrix, a: &Matrix, y: &Matrix) -> Matrix,
 }
 impl CostFunction {
@@ -171,7 +171,7 @@ impl CostFunction {
 			assert_eq!(a.ncols(), y.ncols());
 			a.iter().zip(y.iter())
 				.map(|(a, y)| (a - y).powi(2))
-				.sum::<f64>()
+				.sum::<f32>()
 		},
 		_delta: |z, a, y| {
 			assert_eq!(z.nrows(), a.nrows());
@@ -202,11 +202,11 @@ impl CostFunction {
 						-y * a.ln() - (1.0 - y) * (1.0 - a).ln()
 					}
 				})
-				.sum::<f64>()
+				.sum::<f32>()
 		},
 		_delta: |_z, a, y| a.clone() - y,
 	};
-	pub fn f(&self, a: &Matrix, y: &Matrix) -> f64 {
+	pub fn f(&self, a: &Matrix, y: &Matrix) -> f32 {
 		(self._f)(a, y)
 	}
 	pub fn delta(&self, z: &Matrix, a: &Matrix, y: &Matrix) -> Matrix {
@@ -224,6 +224,6 @@ impl Default for CostFunction {
 pub struct TrainingOptions {
 	pub epochs: usize,
 	pub mini_batch_size: usize,
-	pub eta: f64,
-	pub lambda: f64,
+	pub eta: f32,
+	pub lambda: f32,
 }

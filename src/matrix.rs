@@ -3,23 +3,23 @@ use std::{fmt::Display, ops::{Add, AddAssign, Index, Mul, MulAssign, Sub, SubAss
 #[derive(Clone)]
 pub struct Matrix {
 	pub shape: (usize, usize),
-	data: Vec<f64>,
+	data: Vec<f32>,
 }
 impl Matrix {
-	pub fn update(mut mat: Matrix, f: fn(f64) -> f64) -> Matrix {
+	pub fn update(mut mat: Matrix, f: fn(f32) -> f32) -> Matrix {
 		mat.iter_mut()
 			.for_each(|x| *x = f(*x));
 		mat
 	}
 
-	pub fn new(shape: (usize, usize), data: Vec<f64>) -> Self {
+	pub fn new(shape: (usize, usize), data: Vec<f32>) -> Self {
 		assert_eq!(shape.0 * shape.1, data.len());
 		Self { shape, data }
 	}
 	pub fn zero(shape: (usize, usize)) -> Self {
 		Self::new(shape, vec![0.0; shape.0 * shape.1])
 	}
-	pub fn get(&self, row: usize, col: usize) -> f64 {
+	pub fn get(&self, row: usize, col: usize) -> f32 {
 		self.data[row * self.shape.1 + col]
 	}
 	pub fn row(&self, row: usize) -> MatrixVectorView<'_> {
@@ -28,10 +28,10 @@ impl Matrix {
 	pub fn column(&self, col: usize) -> MatrixVectorView<'_> {
 		MatrixVectorView::new_for_column(self, col)
 	}
-	pub fn iter(&self) -> impl Iterator<Item = &f64> {
+	pub fn iter(&self) -> impl Iterator<Item = &f32> {
 		self.data.iter()
 	}
-	pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f64> {
+	pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f32> {
 		self.data.iter_mut()
 	}
 	pub fn dot(&self, other: &Matrix) -> Matrix {
@@ -84,12 +84,12 @@ impl Matrix {
 		}
 		Matrix::new((rows, cols), data)
 	}
-	pub fn norm(&self) -> f64 {
-		self.iter().map(|x| x.powi(2)).sum::<f64>().sqrt()
+	pub fn norm(&self) -> f32 {
+		self.iter().map(|x| x.powi(2)).sum::<f32>().sqrt()
 	}
 }
-impl From<Vec<f64>> for Matrix {
-	fn from(data: Vec<f64>) -> Self {
+impl From<Vec<f32>> for Matrix {
+	fn from(data: Vec<f32>) -> Self {
 		let shape = (data.len(), 1);
 		Self::new(shape, data)
 	}
@@ -156,8 +156,8 @@ impl MulAssign<&Matrix> for Matrix {
 			.for_each(|(a, b)| *a *= b);
 	}
 }
-impl MulAssign<f64> for Matrix {
-	fn mul_assign(&mut self, scalar: f64) {
+impl MulAssign<f32> for Matrix {
+	fn mul_assign(&mut self, scalar: f32) {
 		self.iter_mut().for_each(|x| *x *= scalar);
 	}
 }
@@ -176,10 +176,10 @@ impl Mul<Matrix> for Matrix {
 		self * &other
 	}
 }
-impl Mul<f64> for Matrix {
+impl Mul<f32> for Matrix {
 	type Output = Matrix;
 
-	fn mul(mut self, scalar: f64) -> Self::Output {
+	fn mul(mut self, scalar: f32) -> Self::Output {
 		self.mul_assign(scalar);
 		self
 	}
@@ -192,7 +192,7 @@ impl Display for Matrix {
 
 #[derive(Clone)]
 pub struct MatrixVectorView<'a> {
-	data: &'a [f64],
+	data: &'a [f32],
 	offset: usize,
 	step: usize,
 	len: usize,
@@ -221,7 +221,7 @@ impl MatrixVectorView<'_> {
 	pub fn iter(&self) -> MatrixVectorViewIterator {
 		self.clone().into_iter()
 	}
-	pub fn dot(&self, other: &MatrixVectorView) -> f64 {
+	pub fn dot(&self, other: &MatrixVectorView) -> f32 {
 		assert_eq!(self.len, other.len);
 		let mut sum = 0.0;
 		for i in 0..self.len {
@@ -236,7 +236,7 @@ impl MatrixVectorView<'_> {
 	}
 }
 impl Index<usize> for MatrixVectorView<'_> {
-	type Output = f64;
+	type Output = f32;
 
 	#[inline]
 	fn index(&self, index: usize) -> &Self::Output {
@@ -244,7 +244,7 @@ impl Index<usize> for MatrixVectorView<'_> {
 	}
 }
 impl<'a> IntoIterator for MatrixVectorView<'a> {
-	type Item = f64;
+	type Item = f32;
 	type IntoIter = MatrixVectorViewIterator<'a>;
 
 	fn into_iter(self) -> Self::IntoIter {
@@ -260,7 +260,7 @@ pub struct MatrixVectorViewIterator<'a> {
 	index: usize,
 }
 impl Iterator for MatrixVectorViewIterator<'_> {
-	type Item = f64;
+	type Item = f32;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		if self.index < self.view.len() {
