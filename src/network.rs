@@ -111,11 +111,6 @@ impl Network {
 			let accuracy = score as f64 / test_data.len() as f64;
 			let elapsed = (Local::now() - t).num_milliseconds() as f64 / 1000.0;
 			println!("Epoch.{}: {:.2}% successful / {} tests ({:.1}s elapsed)", epoch + 1, accuracy * 100.0, test_data.len(), elapsed);
-
-			if options.success_percentage > 0.0 && accuracy > options.success_percentage {
-				println!("Success percentage reached.");
-				break;
-			}
 		}
 	}
 

@@ -14,8 +14,6 @@ fn main() {
 	let data = io::import_images(50_000, 10_000);
 
 	run_network2(data);
-
-	println!("Training successful!");
 }
 
 #[allow(dead_code)]
@@ -53,7 +51,6 @@ fn run_network2(data: TrainData) {
 			lambda: 5.0,
 			..Default::default()
 		},
-		&data.training_data,
-		&data.test_data,
+		&data,
 	);
 }

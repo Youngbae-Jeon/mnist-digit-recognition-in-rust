@@ -1,35 +1,5 @@
 extern crate mnist;
 use mnist::{Mnist, MnistBuilder};
-use image::{DynamicImage, GrayImage, io::Reader as ImageReader};
-
-pub struct TestImages {
-	pub pixel_vector2d: Vec<f64>,
-}
-
-impl TestImages {
-
-	pub fn new(image_path: &str) -> Self {
-		let img: DynamicImage;
-
-		let import_buffer;
-
-		match ImageReader::open(image_path) {
-			Err(_) => {println!("Import failed!"); panic!()},
-			Ok(im_file) => import_buffer = im_file
-		}
-
-		match import_buffer.decode() {
-			Err(_) => {println!("Decode failed!"); panic!()},
-			Ok(img_import) => img = img_import
-		}
-
-		let gray: GrayImage = img.to_luma8();
-
-		Self {
-			pixel_vector2d: gray.to_vec().iter().map(|x| *x as f64 / 255.).collect()
-		}
-	}
-}
 
 pub struct TrainData {
 	//train_array_2d: Vec<Vec<f64>>,
@@ -37,7 +7,7 @@ pub struct TrainData {
 	pub training_data: Vec<Vec<Vec<f64>>>,
 	//validation_array_2d: Vec<Vec<f64>>,
 	//validation_label: Vec<u8>,
-	//pub validation_data: Vec<(Vec<f64>, i32)>,
+	pub validation_data: Vec<(Vec<f64>, i32)>,
 	//test_array_2d: Vec<Vec<f64>>,
 	//test_label: Vec<u8>,
 	pub test_data: Vec<(Vec<f64>, i32)>,
@@ -49,22 +19,22 @@ pub fn import_images(training_size: usize, test_size: usize) -> TrainData {
 
 	// Deconstruct the returned Mnist struct.
 	let Mnist { trn_img, trn_lbl, 
-				val_img: _, val_lbl: _, 
+				val_img, val_lbl, 
 				tst_img, tst_lbl } = MnistBuilder::new()
 		.label_format_digit()
 		.training_set_length(training_size as u32)
-		//.validation_set_length(10_000)
+		.validation_set_length(test_size as u32)
 		.test_set_length(test_size as u32)
 		.base_path("data/")
 		.finalize();
 	
 	let trn_array2d =  pack_images_vec(trn_img, rows, cols);
-	//let val_array2d = pack_images_vec(val_img, rows, cols);
+	let val_array2d = pack_images_vec(val_img, rows, cols);
 	let tst_array2d = pack_images_vec(tst_img, rows, cols);
 	
 	TrainData {
 		training_data: pack_training_data(&trn_array2d, &trn_lbl),
-		//validation_data: pack_vector_data(&val_array2d, &val_lbl),
+		validation_data: pack_vector_data(&val_array2d, &val_lbl),
 		test_data: pack_vector_data(&tst_array2d, &tst_lbl),
 		//train_array_2d: trn_array2d,
 		//train_label: trn_lbl,

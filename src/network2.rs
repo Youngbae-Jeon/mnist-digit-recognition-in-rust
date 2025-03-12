@@ -12,13 +12,14 @@ use chrono::Local;
 use ndarray::ArrayView1;
 use rand::seq::SliceRandom;
 
-use crate::{io::vectorise_num, utils::{ActivationFunction, CostFunction, TrainingOptions, VecInitializer, WeightInitializer}};
+use crate::{io::{vectorise_num, TrainData}, utils::{ActivationFunction, CostFunction, TrainingOptions, VecInitializer, WeightInitializer}};
 
 // network2.rs uses `ndarray::Array2` as Matrix instead of inhouse `matrix::Matrix`.
 // `ndarray` uses cpu features like AVX or SSE2 or BLAS
 // and makes faster performance than the inhouse matrix implementation.
 type Matrix = ndarray::Array2<f64>;
 
+#[derive(Clone)]
 struct Layer {
 	/// matrix of shape (neurons_len, weights_len)
 	weights: Matrix,
@@ -94,21 +95,18 @@ impl Network {
 	/// descent.  The ``training_data`` is a list of tuples ``(x, y)``
 	/// representing the training inputs and the desired outputs.  The
 	/// other non-optional parameters are self-explanatory, as is the
-	/// regularization parameter ``lmbda``.  The method also accepts
-	/// ``evaluation_data``, usually either the validation or test
-	/// data.
+	/// regularization parameter ``lmbda``.
 	pub fn sgd(
 		&mut self,
 		options: &TrainingOptions,
-		training_data: &[Vec<Vec<f64>>],
-		evaluation_data: &[(Vec<f64>, i32)],
+		data: &TrainData,
 	) {
 		if options.lambda < 0.0 {
 			println!("Lambda must be non-negative. Negative lambda will be ignored.");
 		}
 
 		// change data format to tuples of (Matrix, Matrix) representing (x, y)
-		let mut training_data: Vec<(Matrix, Matrix)> = training_data.iter()
+		let mut training_data: Vec<(Matrix, Matrix)> = data.training_data.iter()
 			.map(|arr| {
 				assert_eq!(arr.len(), 2);
 				assert_eq!(arr[0].len(), 784);
@@ -118,7 +116,7 @@ impl Network {
 				(x, y)
 			})
 			.collect();
-		let evaluation_data: Vec<(Matrix, Matrix)> = evaluation_data.iter()
+		let validation_data: Vec<(Matrix, Matrix)> = data.validation_data.iter()
 			.map(|(x, y)| {
 				assert_eq!(x.len(), 784);
 				let x = Matrix::from_shape_vec((x.len(), 1), x.to_vec()).unwrap();
@@ -128,12 +126,16 @@ impl Network {
 			.collect();
 
 		println!("Training with {} data...", training_data.len());
-		let (score, cost) = self.evaluate(&evaluation_data, options.lambda);
-		let accuracy = score as f64 / evaluation_data.len() as f64;
-		println!(" Epoch |  Train   | Train  |   Test   |  Test  | Elapsed ");
-		println!("       | Accuracy |  Cost  | Accuracy |  Cost  |   Time  ");
-		println!("-------|----------|--------|----------|--------|---------");
-		println!(" {:>5} | {:>8} | {:>6} | {:>7.2}% | {:>6.3} | {:>7}", 0, "-", "-", accuracy * 100.0, cost, "-");
+		let (score, cost) = self.evaluate(&validation_data, options.lambda);
+		let accuracy = score as f64 / validation_data.len() as f64;
+		println!(" Epoch |  Train   | Train  | Validation | Validation | Elapsed ");
+		println!("       | Accuracy |  Cost  |  Accuracy  |    Cost    |   Time  ");
+		println!("-------|----------|--------|------------|------------|---------");
+		println!(" {:>5} | {:>8} | {:>6} | {:>9.2}% | {:>10.3} | {:>7}", 0, "-", "-", accuracy * 100.0, cost, "-");
+
+		let mut best_layers: Vec<Layer> = self.layers.clone();
+		let mut best_accu = accuracy;
+		let mut best_epoch = 0;
 
 		let mut rng = rand::rng();
 		for epoch in 0..options.epochs {
@@ -147,17 +149,32 @@ impl Network {
 			let (train_score, train_cost) = self.evaluate(&training_data, options.lambda);
 			let train_accu = train_score as f64 / training_data.len() as f64;
 
-			let (test_score, test_cost) = self.evaluate(&evaluation_data, options.lambda);
-			let test_accu = test_score as f64 / evaluation_data.len() as f64;
+			let (validation_score, validation_cost) = self.evaluate(&validation_data, options.lambda);
+			let validation_accu = validation_score as f64 / validation_data.len() as f64;
 			let elapsed = (Local::now() - t).num_milliseconds() as f64 / 1000.0;
-			println!(" {:>5} | {:>7.2}% | {:>6.3} | {:>7.2}% | {:>6.3} | {:>6.1}s",
-				epoch+1, train_accu*100.0, train_cost, test_accu*100.0, test_cost, elapsed);
+			println!(" {:>5} | {:>7.2}% | {:>6.3} | {:>9.2}% | {:>10.3} | {:>6.1}s",
+				epoch+1, train_accu*100.0, train_cost, validation_accu*100.0, validation_cost, elapsed);
 
-			if options.success_percentage > 0.0 && test_accu > options.success_percentage {
-				println!("Success percentage reached.");
-				break;
-			}
+			if validation_accu > best_accu {
+				best_layers = self.layers.clone();
+				best_accu = validation_accu;
+				best_epoch = epoch;
+			};
 		}
+
+		self.layers = best_layers;
+		let test_data: Vec<(Matrix, Matrix)> = data.test_data.iter()
+			.map(|(x, y)| {
+				assert_eq!(x.len(), 784);
+				let x = Matrix::from_shape_vec((x.len(), 1), x.to_vec()).unwrap();
+				let y = Matrix::from_shape_vec((10, 1), vectorise_num(&(*y as u8))).unwrap();
+				(x, y)
+			})
+			.collect();
+		let (test_score, test_cost) = self.evaluate(&test_data, options.lambda);
+		let test_accu = test_score as f64 / test_data.len() as f64;
+		println!("---------------------------|------------|------------|---------");
+		println!(" {:25} | {:>9.2}% | {:>10.3} | {:>7}", format!("Test by Best Epoch {}", best_epoch+1), test_accu * 100.0, test_cost, "");
 	}
 
 	#[cfg(not(feature = "rayon"))]

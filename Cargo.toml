@@ -7,15 +7,14 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-image = "^0.23.14"
-mnist = "^0.4.1"
-chrono = "0.4.39"
+mnist = "0.6.0"
+chrono = "0.4.40"
 make_it_braille = "0.6.0"
 rand = "0.9.0"
 rand_distr = "0.5.1"
 rayon = { version = "1.10.0", optional = true}
 ndarray = { version = "0.16.1" }
-blas-src = { version = "0.10", features = ["openblas"], optional = true }
+blas-src = { version = "0.11.1", features = ["openblas"], optional = true }
 openblas-src = { version = "0.10", features = ["cblas", "system"], optional = true }
 
 [features]

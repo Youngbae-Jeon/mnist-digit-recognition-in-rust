@@ -223,7 +223,6 @@ impl Default for CostFunction {
 #[derive(Default)]
 pub struct TrainingOptions {
 	pub epochs: usize,
-	pub success_percentage: f64,
 	pub mini_batch_size: usize,
 	pub eta: f64,
 	pub lambda: f64,
